@@ -1,5 +1,5 @@
 use regex::Regex;
-use sqlx::{postgres::PgPoolOptions, PgPool};
+use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::env;
 use std::fmt;
 use std::str::FromStr;
@@ -23,6 +23,10 @@ pub struct Config {
     pub jwt_expiry_secs: i64,
 
     pub request_timeout_secs: u64,
+    /// How long in-flight requests may take to finish after a shutdown signal.
+    pub shutdown_timeout_secs: u64,
+    /// Serve Swagger UI at /docs. Defaults to on in debug builds, off in release builds.
+    pub enable_swagger: bool,
     /// Allowed CORS origins. An empty list means any origin (`*`).
     pub cors_allowed_origins: Vec<String>,
 
@@ -34,6 +38,38 @@ pub struct Config {
 
     pub asset_allowed_extensions_pattern: Regex,
     pub asset_max_size: usize,
+
+    /// Where uploaded files are stored (STORAGE_BACKEND).
+    pub storage_backend: StorageBackend,
+}
+
+/// Storage backend for uploaded files.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StorageBackend {
+    /// Local disk under `ASSETS_PRIVATE_PATH` (single instance only).
+    Local,
+    /// S3-compatible object storage; credentials come from the standard `AWS_*` variables.
+    S3 { bucket: String },
+}
+
+impl StorageBackend {
+    fn from_env() -> Result<Self, ConfigError> {
+        match env::var("STORAGE_BACKEND")
+            .unwrap_or_else(|_| "local".into())
+            .trim()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "local" => Ok(Self::Local),
+            "s3" => Ok(Self::S3 {
+                bucket: required("S3_BUCKET")?,
+            }),
+            other => Err(ConfigError {
+                var: "STORAGE_BACKEND",
+                reason: format!("invalid value {other:?}: expected \"local\" or \"s3\""),
+            }),
+        }
+    }
 }
 
 /// ConfigError names the environment variable that is missing or invalid.
@@ -129,6 +165,8 @@ impl Config {
             jwt_expiry_secs: parsed_or("JWT_EXPIRY_SECS", 24 * 60 * 60)?,
 
             request_timeout_secs: parsed_or("REQUEST_TIMEOUT_SECS", 1800)?,
+            shutdown_timeout_secs: parsed_or("SHUTDOWN_TIMEOUT_SECS", 30)?,
+            enable_swagger: parsed_or("ENABLE_SWAGGER", cfg!(debug_assertions))?,
             cors_allowed_origins,
 
             assets_public_path: required("ASSETS_PUBLIC_PATH")?,
@@ -139,6 +177,7 @@ impl Config {
 
             asset_allowed_extensions_pattern,
             asset_max_size: parsed_or("ASSET_MAX_SIZE", 50 * 1024 * 1024)?, // Default to 50MB
+            storage_backend: StorageBackend::from_env()?,
         })
     }
 }
@@ -160,6 +199,8 @@ impl fmt::Debug for Config {
             .field("jwt_secret", &"<redacted>")
             .field("jwt_expiry_secs", &self.jwt_expiry_secs)
             .field("request_timeout_secs", &self.request_timeout_secs)
+            .field("shutdown_timeout_secs", &self.shutdown_timeout_secs)
+            .field("enable_swagger", &self.enable_swagger)
             .field("cors_allowed_origins", &self.cors_allowed_origins)
             .field("assets_public_path", &self.assets_public_path)
             .field("assets_public_url", &self.assets_public_url)
@@ -170,6 +211,7 @@ impl fmt::Debug for Config {
                 &self.asset_allowed_extensions_pattern.as_str(),
             )
             .field("asset_max_size", &self.asset_max_size)
+            .field("storage_backend", &self.storage_backend)
             .finish()
     }
 }

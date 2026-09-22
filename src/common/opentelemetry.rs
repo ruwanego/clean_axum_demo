@@ -1,13 +1,13 @@
 // This module provides utilities to set up OpenTelemetry tracing using the OTLP exporter.
 // It configures the tracer provider, resource attributes, and integrates with tracing-subscriber.
 use opentelemetry::trace::TracerProvider;
-use opentelemetry::{global, KeyValue};
+use opentelemetry::{KeyValue, global};
 use opentelemetry_otlp::{Protocol, WithExportConfig};
-use opentelemetry_sdk::{trace::SdkTracerProvider, Resource};
+use opentelemetry_sdk::{Resource, trace::SdkTracerProvider};
 use std::{error::Error, sync::OnceLock};
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::fmt::format::FmtSpan;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
+use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 // get_resource initializes a global Resource containing service name and version.
 // Uses OnceLock to ensure the resource is created only once.
@@ -42,16 +42,12 @@ pub fn init_traces() -> SdkTracerProvider {
         other => panic!("Unsupported OTLP protocol: {}", other),
     };
     // Create the OTLP HTTP exporter using the specified endpoint and protocol.
-    let exporter = match protocol {
-        Protocol::HttpJson | Protocol::HttpBinary => {
-            opentelemetry_otlp::HttpExporterBuilder::default()
-                .with_endpoint(otlp_endpoint)
-                .with_protocol(protocol)
-                .build_span_exporter()
-                .expect("Failed to create trace exporter")
-        }
-        _ => panic!("Unsupported OTLP protocol"),
-    };
+    let exporter = opentelemetry_otlp::SpanExporter::builder()
+        .with_http()
+        .with_endpoint(otlp_endpoint)
+        .with_protocol(protocol)
+        .build()
+        .expect("Failed to create trace exporter");
 
     // Build and return the tracer provider with batch exporter and resource.
     SdkTracerProvider::builder()

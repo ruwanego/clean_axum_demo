@@ -4,7 +4,7 @@ use clean_axum_demo::common::{
     dto::RestApiResponse,
     jwt::{AuthBody, AuthPayload},
 };
-use test_helpers::{deserialize_json_body, request_with_body, TEST_CLIENT_ID, TEST_CLIENT_SECRET};
+use test_helpers::{TEST_CLIENT_ID, TEST_CLIENT_SECRET, deserialize_json_body, request_with_body};
 
 mod test_helpers;
 

@@ -19,6 +19,6 @@ mod infra {
 }
 
 // Re-export commonly used items for convenience
-pub use api::routes::{user_routes, UserApiDoc};
+pub use api::routes::{UserApiDoc, user_routes};
 pub use domain::service::UserServiceTrait;
 pub use infra::impl_service::UserService;

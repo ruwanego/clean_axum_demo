@@ -4,13 +4,13 @@ use crate::{
     domains::device::dto::device_dto::{CreateDeviceDto, DeviceDto, UpdateDeviceDto},
 };
 use axum::{
-    routing::{delete, get, post, put},
     Router,
+    routing::{delete, get, post, put},
 };
 
 use utoipa::{
-    openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
     OpenApi,
+    openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
 };
 
 #[derive(OpenApi)]

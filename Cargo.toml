@@ -2,36 +2,27 @@
 license = "MIT"
 name = "clean_axum_demo"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
+rust-version = "1.94"
 
 [dependencies]
-axum-extra = { version = "0.10.1", features = ["typed-header"] }
 axum = { version = "0.8.3", features = ["multipart"] }
 tokio = { version = "1.37", features = ["full"] }
 serde = { version = "1.0.197", features = ["derive"] }
 serde_json = "1.0.114"
 uuid = { version = "1.7.0", features = ["v4", "serde"] }
-sqlx = { version = "0.8.3", features = [
-    "postgres",
-    "runtime-tokio",
-    "macros",
-    "uuid",
-    "chrono",
-    "json",
-] }
-thiserror = "1.0.58"
+sqlx = { version = "0.9", features = ["postgres", "runtime-tokio", "macros", "uuid", "chrono", "json", "migrate"] }
+thiserror = "2"
 tower = { version = "0.5.2", features = ["timeout"] }
-tower-http = { version = "0.6.2", features = ["cors", "trace", "fs"] }
+tower-http = { version = "0.7", features = ["cors", "trace", "fs", "request-id"] }
 utoipa = { version = "5.3.1", features = ["axum_extras", "uuid", "chrono"] }
 utoipa-swagger-ui = { version = "9.0.1", features = ["axum"] }
 async-trait = "0.1.88"
 regex = "1.11.1"
-tokio-util = "0.7.14"
 http-body-util = "0.1.3"
-validator = { version = "0.20.0", features = ["derive"] }
-rand = "0.9.0"
-argon2 = "0.5.3"
-jsonwebtoken = "9.3.1"
+validator = { version = "0.21", features = ["derive"] }
+argon2 = "0.6"
+jsonwebtoken = { version = "11.1.0", default-features = false, features = ["rust_crypto"] }
 chrono = "0.4.40"
 dotenvy = "0.15.7"
 tracing = "0.1.40"
@@ -45,21 +36,28 @@ tracing-subscriber = { version = "0.3.18", features = [
 ] }
 
 # Optional OpenTelemetry-related crates (all `optional = true`)
-opentelemetry = { version = "0.30.0", optional = true }
-opentelemetry_sdk = { version = "0.30.0", optional = true }
-opentelemetry-otlp = { version = "0.30", features = [
-    "http-proto",
-], optional = true }
-opentelemetry-appender-tracing = { version = "0.30.0", optional = true }
-tracing-opentelemetry = { version = "0.31.0", optional = true }
-once_cell = "1.21.3"
+opentelemetry = { version = "0.32", optional = true }
+opentelemetry_sdk = { version = "0.32", optional = true }
+opentelemetry-otlp = { version = "0.32", features = ["http-json", "http-proto"], optional = true }
+tracing-opentelemetry = { version = "0.33", optional = true }
 simple_dto_mapper_derive = "0.1.1"
+object_store = { version = "0.14", features = ["aws"] }
+mime_guess = "2"
+futures-util = "0.3"
+bytes = "1"
 
 [features]
 opentelemetry = [
     "dep:opentelemetry",
     "dep:opentelemetry_sdk",
     "dep:opentelemetry-otlp",
-    "dep:opentelemetry-appender-tracing",
     "dep:tracing-opentelemetry",
 ]
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"

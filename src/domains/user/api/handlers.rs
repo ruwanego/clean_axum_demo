@@ -10,9 +10,9 @@ use crate::{
 };
 
 use axum::{
+    Extension, Json,
     extract::{Multipart, State},
     response::IntoResponse,
-    Extension, Json,
 };
 
 use validator::Validate;

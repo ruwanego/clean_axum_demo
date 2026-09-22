@@ -1,0 +1,8 @@
+[advisories]
+ignore = [
+    # RUSTSEC-2023-0071 (rsa, Marvin timing attack; no fixed version).
+    # Pulled in only by jsonwebtoken's `rust_crypto` backend. This service signs
+    # and verifies JWTs with HS256 only, so no RSA private-key operation runs.
+    # Revisit if RSA/RS* algorithms are ever enabled.
+    "RUSTSEC-2023-0071",
+]

@@ -1,13 +1,19 @@
-use crate::common::{config::Config, error::AppError};
+use crate::common::{
+    config::Config,
+    error::AppError,
+    storage::{ByteStream, FileStorage},
+};
 use crate::domains::file::domain::model::FileType;
 use crate::domains::file::domain::repository::FileRepository;
 use crate::domains::file::domain::service::FileServiceTrait;
 use crate::domains::file::dto::file_dto::{CreateFileDto, UploadFileDto, UploadedFileDto};
 use crate::domains::file::infra::impl_repository::FileRepo;
 
+use bytes::Bytes;
 use sqlx::{PgPool, Postgres, Transaction};
 use std::path::Path as FilePath;
 use std::sync::Arc;
+use uuid::Uuid;
 
 use async_trait::async_trait;
 
@@ -19,22 +25,28 @@ pub struct FileService {
     config: Config,
     pool: PgPool,
     repo: Arc<dyn FileRepository + Send + Sync>,
+    storage: Arc<dyn FileStorage>,
 }
 
 /// Implementation of the FileService struct
 #[async_trait]
 impl FileServiceTrait for FileService {
     /// constructor for the service.
-    fn create_service(config: Config, pool: PgPool) -> Arc<dyn FileServiceTrait> {
+    fn create_service(
+        config: Config,
+        pool: PgPool,
+        storage: Arc<dyn FileStorage>,
+    ) -> Arc<dyn FileServiceTrait> {
         Arc::new(Self {
             config,
             pool,
             repo: Arc::new(FileRepo {}),
+            storage,
         })
     }
 
     /// Uploads a profile picture for a user.
-    /// Validates the file, writes it to disk, and stores its metadata in the database.
+    /// Validates the file, writes it to storage, and stores its metadata in the database.
     /// Returns the uploaded file's metadata.
     async fn process_profile_picture_upload(
         &self,
@@ -48,15 +60,14 @@ impl FileServiceTrait for FileService {
             return Err(AppError::InvalidFileData);
         }
 
-        let (unique_filename, file_relative_path, file_path) =
-            self.build_file_path(&file_dto.original_filename);
+        let (unique_filename, file_relative_path) =
+            Self::build_storage_key(&file_dto.original_filename);
 
-        self.write_file_to_disk(&file_path, &file_dto.data)?;
+        self.storage
+            .put(&file_relative_path, Bytes::copy_from_slice(&file_dto.data))
+            .await?;
 
-        let file_url = format!(
-            "{}/profile/{}",
-            self.config.assets_private_url, &unique_filename
-        );
+        let file_url = format!("{}/{}", self.config.assets_private_url, file_relative_path);
 
         let create_file_dto = CreateFileDto {
             user_id: upload_file_dto.user_id.clone(),
@@ -107,7 +118,7 @@ impl FileServiceTrait for FileService {
     }
 
     /// Deletes a file by its id.
-    /// Removes the file from the filesystem and deletes its metadata from the database.
+    /// Removes the file from storage and deletes its metadata from the database.
     /// Returns a success message if the deletion was successful.
     async fn delete_file(&self, file_id: String) -> Result<String, AppError> {
         let mut tx = self.pool.begin().await?;
@@ -134,20 +145,17 @@ impl FileServiceTrait for FileService {
             return Err(AppError::NotFound("File not found".into()));
         }
 
-        let file_path = FilePath::new(self.config.assets_private_path.as_str())
-            .join(to_delete_file.unwrap().file_relative_path);
-
-        if std::fs::remove_file(&file_path).is_err() {
-            tracing::error!(
-                "Error deleting file from filesystem: {}",
-                file_path.to_str().unwrap()
-            );
-            return Err(AppError::InternalError);
+        if let Some(file) = to_delete_file {
+            self.storage.delete(&file.file_relative_path).await?;
         }
 
         tx.commit().await?;
 
         Ok("File deleted successfully".into())
+    }
+
+    async fn read_file(&self, relative_path: &str) -> Result<ByteStream, AppError> {
+        Ok(self.storage.get(relative_path).await?)
     }
 }
 
@@ -171,67 +179,44 @@ impl FileService {
         }
     }
 
-    /// Ensures the generated filename is unique within the given directory.
-    fn generate_unique_filename(original: &str, base_dir: &str) -> String {
-        let path = FilePath::new(original);
-        let stem = path.file_stem().unwrap_or_default().to_string_lossy();
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    /// Builds a collision-free storage key for an upload: `profile_picture/<uuid>.<ext>`.
+    /// Returns `(file_name, relative_key)`. The original name is kept only as metadata,
+    /// so it never influences the storage path.
+    fn build_storage_key(original_filename: &str) -> (String, String) {
+        let ext = FilePath::new(original_filename)
+            .extension()
+            .and_then(|e| e.to_str())
+            .filter(|e| !e.is_empty() && e.chars().all(|c| c.is_ascii_alphanumeric()))
+            .map(str::to_ascii_lowercase);
 
-        let mut candidate = if ext.is_empty() {
-            format!("{}", stem)
-        } else {
-            format!("{}.{}", stem, ext)
+        let file_name = match ext {
+            Some(ext) => format!("{}.{ext}", Uuid::new_v4()),
+            None => Uuid::new_v4().to_string(),
         };
+        let relative_key = format!("{}/{}", FileType::ProfilePicture, file_name);
+        (file_name, relative_key)
+    }
+}
 
-        let mut count = 1;
-        let base = FilePath::new(base_dir);
+#[cfg(test)]
+mod tests {
+    use super::FileService;
 
-        while base.join(&candidate).exists() {
-            candidate = if ext.is_empty() {
-                format!("{}({})", stem, count)
-            } else {
-                format!("{}({}).{}", stem, count, ext)
-            };
-            count += 1;
-        }
+    #[test]
+    fn storage_key_is_unique_and_ignores_directories() {
+        let (name_a, key_a) = FileService::build_storage_key("../../etc/Cat.PNG");
+        let (name_b, _) = FileService::build_storage_key("../../etc/Cat.PNG");
 
-        candidate
+        assert_ne!(name_a, name_b);
+        assert!(name_a.ends_with(".png"));
+        assert_eq!(key_a, format!("profile_picture/{name_a}"));
     }
 
-    /// Constructs a unique filename, relative path, and absolute disk path for the upload.
-    fn build_file_path(&self, original_filename: &str) -> (String, String, std::path::PathBuf) {
-        let base_dir = self.config.assets_private_path.as_str();
-        let base_dir_with_profile =
-            FilePath::new(base_dir).join(FileType::ProfilePicture.to_string());
-
-        let unique_filename = FileService::generate_unique_filename(
-            original_filename,
-            base_dir_with_profile.to_str().unwrap(),
-        );
-        let file_path = base_dir_with_profile.join(&unique_filename);
-
-        let relative_path = format!("{}/{}", FileType::ProfilePicture, unique_filename);
-        (unique_filename, relative_path, file_path)
-    }
-
-    /// Writes the file's byte data to the disk, creating directories as needed.
-    fn write_file_to_disk(&self, file_path: &FilePath, data: &[u8]) -> Result<(), AppError> {
-        let parent = file_path.parent().ok_or(AppError::InternalError)?;
-        std::fs::create_dir_all(parent).map_err(|err| {
-            tracing::error!("Error creating directory: {}", err);
-            AppError::InternalError
-        })?;
-
-        std::fs::write(file_path, data).map_err(|err| {
-            tracing::error!("Error writing file: {}", err);
-            AppError::InternalError
-        })?;
-
-        if !file_path.exists() {
-            tracing::error!("File was not written successfully.");
-            return Err(AppError::InternalError);
-        }
-
-        Ok(())
+    #[test]
+    fn storage_key_drops_suspicious_extensions() {
+        let (name, _) = FileService::build_storage_key("evil.p/hp");
+        assert!(!name.contains('/'));
+        let (name, _) = FileService::build_storage_key("noext");
+        assert!(!name.contains('.'));
     }
 }

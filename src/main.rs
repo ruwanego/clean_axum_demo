@@ -1,10 +1,11 @@
 use clean_axum_demo::{app::create_router, common};
 use common::{
     bootstrap::{build_app_state, load_dotenv, shutdown_signal},
-    config::{setup_database, Config},
+    config::{Config, setup_database},
 };
 use sqlx::PgPool;
-use tracing::info;
+use std::{future::IntoFuture, time::Duration};
+use tracing::{info, warn};
 
 #[cfg(not(feature = "opentelemetry"))]
 use common::bootstrap::setup_tracing;
@@ -66,7 +67,10 @@ async fn serve(pool: PgPool, config: Config) -> Result<(), BoxError> {
         migrate(&pool).await?;
     }
 
-    let state = build_app_state(pool.clone(), config.clone());
+    // Secrets are redacted by Config's Debug impl.
+    info!(?config, "Starting with configuration");
+
+    let state = build_app_state(pool.clone(), config.clone())?;
     let app = create_router(state);
 
     let addr = format!("{}:{}", config.service_host, config.service_port);
@@ -74,12 +78,45 @@ async fn serve(pool: PgPool, config: Config) -> Result<(), BoxError> {
 
     info!("Server running at {addr}");
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    // Graceful shutdown drains in-flight requests, but only for up to
+    // SHUTDOWN_TIMEOUT_SECS after the signal; then remaining connections are dropped.
+    let (signal_tx, signal_rx) = tokio::sync::oneshot::channel::<()>();
+    let mut server = Box::pin(
+        axum::serve(listener, app)
+            .with_graceful_shutdown(async move {
+                shutdown_signal().await;
+                let _ = signal_tx.send(());
+            })
+            .into_future(),
+    );
 
+    let shutdown_timeout = Duration::from_secs(config.shutdown_timeout_secs);
+    let deadline = async move {
+        // Only start counting once a shutdown signal has actually been received.
+        if signal_rx.await.is_ok() {
+            tokio::time::sleep(shutdown_timeout).await;
+        } else {
+            std::future::pending::<()>().await;
+        }
+    };
+
+    tokio::select! {
+        result = &mut server => result?,
+        _ = deadline => warn!(
+            "Graceful shutdown did not finish within {shutdown_timeout:?}; dropping remaining connections"
+        ),
+    }
+    drop(server);
+
+    // Connection tasks that outlived the deadline may still hold DB connections, so
+    // closing the pool is bounded too; the runtime drops those tasks on exit.
     info!("Server stopped, closing database pool");
-    pool.close().await;
+    if tokio::time::timeout(Duration::from_secs(5), pool.close())
+        .await
+        .is_err()
+    {
+        warn!("Timed out closing database pool");
+    }
 
     Ok(())
 }

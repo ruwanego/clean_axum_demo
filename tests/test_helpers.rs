@@ -1,12 +1,12 @@
 use std::sync::Once;
 
 use axum::{
+    Router,
     body::Body,
     http::{
-        header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE},
         Method, Request, Response, StatusCode,
+        header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE},
     },
-    Router,
 };
 
 use dotenvy::from_filename;
@@ -22,7 +22,7 @@ use clean_axum_demo::{
     },
 };
 
-use sqlx::{postgres::PgPoolOptions, PgPool};
+use sqlx::{PgPool, postgres::PgPoolOptions};
 use tower::ServiceExt;
 
 static INIT: Once = Once::new();
@@ -69,10 +69,8 @@ pub async fn setup_test_db() -> Result<PgPool, Box<dyn std::error::Error>> {
 pub async fn create_test_router() -> Router {
     let pool = setup_test_db().await.unwrap();
     let config = Config::from_env().unwrap();
-    let state = build_app_state(pool, config.clone());
-    let app = create_router(state);
-
-    app
+    let state = build_app_state(pool, config.clone()).expect("build app state");
+    create_router(state)
 }
 
 /// Helper function gets the authentication token

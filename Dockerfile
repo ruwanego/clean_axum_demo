@@ -1,29 +1,33 @@
-FROM rust:1.86-slim AS builder
-
+# Chef stage: cargo-chef computes a dependency "recipe" so dependency builds are
+# cached independently of source changes.
+FROM rust:1.98-slim AS chef
 WORKDIR /app
-
-# Install build dependencies (curl is used by utoipa-swagger-ui's build script)
+# Build dependencies (curl is used by utoipa-swagger-ui's build script)
 RUN apt-get update && apt-get install -y --no-install-recommends libssl-dev pkg-config curl ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && cargo install cargo-chef --locked
 
+# Planner stage: generate recipe.json from the manifests
+FROM chef AS planner
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+RUN cargo chef prepare --recipe-path recipe.json
+
+# Builder stage: build dependencies (cached), then the application
+FROM chef AS builder
 # sqlx offline mode: compile-time query checks use the committed .sqlx metadata
 ENV SQLX_OFFLINE=true
-
-# Build dependencies first so they are cached independently of source changes
-COPY Cargo.toml Cargo.lock ./
-RUN mkdir src && echo "fn main() {}" > src/main.rs && touch src/lib.rs \
-    && cargo build --release --locked \
-    && rm -rf src
+COPY --from=planner /app/recipe.json recipe.json
+RUN cargo chef cook --release --locked --recipe-path recipe.json
 
 # Copy sources, query metadata and migrations (embedded into the binary)
+COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY .sqlx ./.sqlx
 COPY migrations ./migrations
+RUN cargo build --release --locked --bin clean_axum_demo
 
-# Touch sources so cargo rebuilds the crate rather than reusing the stub
-RUN touch src/main.rs src/lib.rs && cargo build --release --locked
-
-# Create runtime image
+# Runtime image
 FROM debian:stable-slim
 
 WORKDIR /app
@@ -42,7 +46,8 @@ RUN mkdir -p assets/private && chown -R app:app assets/private
 ENV RUST_LOG=info \
     LOG_FORMAT=json \
     SERVICE_HOST=0.0.0.0 \
-    SERVICE_PORT=8080
+    SERVICE_PORT=8080 \
+    ENABLE_SWAGGER=false
 
 USER app
 

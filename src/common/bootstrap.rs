@@ -4,26 +4,29 @@ use sqlx::PgPool;
 
 use crate::common::config::Config;
 use crate::common::jwt::Keys;
+use crate::common::storage::{StorageError, build_storage};
 use crate::domains::auth::{AuthService, AuthServiceTrait};
 use crate::domains::device::{DeviceService, DeviceServiceTrait};
 use crate::domains::file::{FileService, FileServiceTrait};
 use crate::domains::user::UserServiceTrait;
 use crate::{common::app_state::AppState, domains::user::UserService};
 
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Constructs and wires all application services and returns a configured AppState.
-pub fn build_app_state(pool: PgPool, config: Config) -> AppState {
+/// Fails if the configured storage backend cannot be initialised.
+pub fn build_app_state(pool: PgPool, config: Config) -> Result<AppState, StorageError> {
+    let storage = build_storage(&config)?;
     let jwt_keys = Keys::from_config(&config);
     let auth_service: Arc<dyn AuthServiceTrait> =
         AuthService::create_service(pool.clone(), Arc::clone(&jwt_keys));
     let file_service: Arc<dyn FileServiceTrait> =
-        FileService::create_service(config.clone(), pool.clone());
+        FileService::create_service(config.clone(), pool.clone(), storage);
     let user_service: Arc<dyn UserServiceTrait> =
         UserService::create_service(pool.clone(), Arc::clone(&file_service));
     let device_service: Arc<dyn DeviceServiceTrait> = DeviceService::create_service(pool.clone());
 
-    AppState::new(
+    Ok(AppState::new(
         config,
         pool,
         jwt_keys,
@@ -31,7 +34,7 @@ pub fn build_app_state(pool: PgPool, config: Config) -> AppState {
         user_service,
         device_service,
         file_service,
-    )
+    ))
 }
 
 /// Loads a `.env` file into the process environment if one exists.

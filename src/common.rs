@@ -8,4 +8,5 @@ pub mod jwt;
 pub mod multipart_helper;
 #[cfg(feature = "opentelemetry")]
 pub mod opentelemetry;
+pub mod storage;
 pub mod ts_format;
