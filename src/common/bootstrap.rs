@@ -10,7 +10,7 @@ use crate::domains::file::{FileService, FileServiceTrait};
 use crate::domains::user::UserServiceTrait;
 use crate::{common::app_state::AppState, domains::user::UserService};
 
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Constructs and wires all application services and returns a configured AppState.
 pub fn build_app_state(pool: PgPool, config: Config) -> AppState {

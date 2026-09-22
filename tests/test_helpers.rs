@@ -1,12 +1,12 @@
 use std::sync::Once;
 
 use axum::{
+    Router,
     body::Body,
     http::{
-        header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE},
         Method, Request, Response, StatusCode,
+        header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE},
     },
-    Router,
 };
 
 use dotenvy::from_filename;
@@ -22,7 +22,7 @@ use clean_axum_demo::{
     },
 };
 
-use sqlx::{postgres::PgPoolOptions, PgPool};
+use sqlx::{PgPool, postgres::PgPoolOptions};
 use tower::ServiceExt;
 
 static INIT: Once = Once::new();

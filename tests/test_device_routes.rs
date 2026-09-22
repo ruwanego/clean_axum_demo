@@ -9,7 +9,7 @@ use clean_axum_demo::domains::device::{DeviceOS, DeviceStatus};
 use uuid::Uuid;
 mod test_helpers;
 use test_helpers::{
-    deserialize_json_body, request_with_auth, request_with_auth_and_body, TEST_USER_ID,
+    TEST_USER_ID, deserialize_json_body, request_with_auth, request_with_auth_and_body,
 };
 
 use chrono::{Duration, Utc};

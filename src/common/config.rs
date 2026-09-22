@@ -1,5 +1,5 @@
 use regex::Regex;
-use sqlx::{postgres::PgPoolOptions, PgPool};
+use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::env;
 use std::fmt;
 use std::str::FromStr;

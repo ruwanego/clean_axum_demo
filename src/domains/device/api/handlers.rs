@@ -5,9 +5,9 @@ use crate::domains::device::dto::device_dto::{
     CreateDeviceDto, DeviceDto, UpdateDeviceDto, UpdateManyDevicesDto,
 };
 use axum::{
+    Extension, Json,
     extract::{Path, State},
     response::IntoResponse,
-    Extension, Json,
 };
 
 /// This function creates a router for getting a device by ID

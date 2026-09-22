@@ -1,7 +1,7 @@
 use clean_axum_demo::{app::create_router, common};
 use common::{
     bootstrap::{build_app_state, load_dotenv, shutdown_signal},
-    config::{setup_database, Config},
+    config::{Config, setup_database},
 };
 use sqlx::PgPool;
 use tracing::info;
