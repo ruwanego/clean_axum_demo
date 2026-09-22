@@ -14,7 +14,7 @@ uuid = { version = "1.7.0", features = ["v4", "serde"] }
 sqlx = { version = "0.9", features = ["postgres", "runtime-tokio", "macros", "uuid", "chrono", "json", "migrate"] }
 thiserror = "2"
 tower = { version = "0.5.2", features = ["timeout"] }
-tower-http = { version = "0.7", features = ["cors", "trace", "fs"] }
+tower-http = { version = "0.7", features = ["cors", "trace", "fs", "request-id"] }
 utoipa = { version = "5.3.1", features = ["axum_extras", "uuid", "chrono"] }
 utoipa-swagger-ui = { version = "9.0.1", features = ["axum"] }
 async-trait = "0.1.88"

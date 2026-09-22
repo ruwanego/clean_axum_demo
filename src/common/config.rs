@@ -23,6 +23,10 @@ pub struct Config {
     pub jwt_expiry_secs: i64,
 
     pub request_timeout_secs: u64,
+    /// How long in-flight requests may take to finish after a shutdown signal.
+    pub shutdown_timeout_secs: u64,
+    /// Serve Swagger UI at /docs. Defaults to on in debug builds, off in release builds.
+    pub enable_swagger: bool,
     /// Allowed CORS origins. An empty list means any origin (`*`).
     pub cors_allowed_origins: Vec<String>,
 
@@ -129,6 +133,8 @@ impl Config {
             jwt_expiry_secs: parsed_or("JWT_EXPIRY_SECS", 24 * 60 * 60)?,
 
             request_timeout_secs: parsed_or("REQUEST_TIMEOUT_SECS", 1800)?,
+            shutdown_timeout_secs: parsed_or("SHUTDOWN_TIMEOUT_SECS", 30)?,
+            enable_swagger: parsed_or("ENABLE_SWAGGER", cfg!(debug_assertions))?,
             cors_allowed_origins,
 
             assets_public_path: required("ASSETS_PUBLIC_PATH")?,
@@ -160,6 +166,8 @@ impl fmt::Debug for Config {
             .field("jwt_secret", &"<redacted>")
             .field("jwt_expiry_secs", &self.jwt_expiry_secs)
             .field("request_timeout_secs", &self.request_timeout_secs)
+            .field("shutdown_timeout_secs", &self.shutdown_timeout_secs)
+            .field("enable_swagger", &self.enable_swagger)
             .field("cors_allowed_origins", &self.cors_allowed_origins)
             .field("assets_public_path", &self.assets_public_path)
             .field("assets_public_url", &self.assets_public_url)

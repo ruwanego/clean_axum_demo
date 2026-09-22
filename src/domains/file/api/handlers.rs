@@ -34,15 +34,16 @@ pub async fn serve_protected_file(
 
     let file_path = FilePath::new(base_dir).join(file_metadata.file_relative_path);
 
-    if !file_path.exists() {
-        return Err(AppError::NotFound("File not found".into()));
-    }
-
     // Open and stream the file.
-    let file = tokio::fs::File::open(file_path).await.map_err(|err| {
-        tracing::error!("Error opening file: {}", err);
-        AppError::InternalError
-    })?;
+    let file = tokio::fs::File::open(file_path)
+        .await
+        .map_err(|err| match err.kind() {
+            std::io::ErrorKind::NotFound => AppError::NotFound("File not found".into()),
+            _ => {
+                tracing::error!("Error opening file: {}", err);
+                AppError::InternalError
+            }
+        })?;
     let stream = ReaderStream::new(file);
     let body = Body::from_stream(stream);
 

@@ -322,6 +322,8 @@ naming the variable. Commonly used variables:
 | `SERVICE_HOST` | `0.0.0.0` | |
 | `JWT_EXPIRY_SECS` | `86400` | |
 | `REQUEST_TIMEOUT_SECS` | `1800` | |
+| `SHUTDOWN_TIMEOUT_SECS` | `30` | max time to drain requests after SIGTERM |
+| `ENABLE_SWAGGER` | on in debug, off in release | Swagger UI at `/docs` |
 | `CORS_ALLOWED_ORIGINS` | `*` | comma-separated list |
 | `DATABASE_CONNECT_RETRIES` | `5` | exponential backoff at startup |
 | `RUN_MIGRATIONS_ON_START` | `false` | |

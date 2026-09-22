@@ -49,9 +49,9 @@ impl FileServiceTrait for FileService {
         }
 
         let (unique_filename, file_relative_path, file_path) =
-            self.build_file_path(&file_dto.original_filename);
+            self.build_file_path(&file_dto.original_filename).await;
 
-        self.write_file_to_disk(&file_path, &file_dto.data)?;
+        self.write_file_to_disk(&file_path, &file_dto.data).await?;
 
         let file_url = format!(
             "{}/profile/{}",
@@ -137,10 +137,10 @@ impl FileServiceTrait for FileService {
         let file_path = FilePath::new(self.config.assets_private_path.as_str())
             .join(to_delete_file.unwrap().file_relative_path);
 
-        if std::fs::remove_file(&file_path).is_err() {
+        if let Err(err) = tokio::fs::remove_file(&file_path).await {
             tracing::error!(
-                "Error deleting file from filesystem: {}",
-                file_path.to_str().unwrap()
+                "Error deleting file from filesystem {}: {err}",
+                file_path.display()
             );
             return Err(AppError::InternalError);
         }
@@ -172,7 +172,7 @@ impl FileService {
     }
 
     /// Ensures the generated filename is unique within the given directory.
-    fn generate_unique_filename(original: &str, base_dir: &str) -> String {
+    async fn generate_unique_filename(original: &str, base_dir: &FilePath) -> String {
         let path = FilePath::new(original);
         let stem = path.file_stem().unwrap_or_default().to_string_lossy();
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
@@ -184,9 +184,10 @@ impl FileService {
         };
 
         let mut count = 1;
-        let base = FilePath::new(base_dir);
-
-        while base.join(&candidate).exists() {
+        while tokio::fs::try_exists(base_dir.join(&candidate))
+            .await
+            .unwrap_or(false)
+        {
             candidate = if ext.is_empty() {
                 format!("{}({})", stem, count)
             } else {
@@ -199,15 +200,16 @@ impl FileService {
     }
 
     /// Constructs a unique filename, relative path, and absolute disk path for the upload.
-    fn build_file_path(&self, original_filename: &str) -> (String, String, std::path::PathBuf) {
+    async fn build_file_path(
+        &self,
+        original_filename: &str,
+    ) -> (String, String, std::path::PathBuf) {
         let base_dir = self.config.assets_private_path.as_str();
         let base_dir_with_profile =
             FilePath::new(base_dir).join(FileType::ProfilePicture.to_string());
 
-        let unique_filename = FileService::generate_unique_filename(
-            original_filename,
-            base_dir_with_profile.to_str().unwrap(),
-        );
+        let unique_filename =
+            FileService::generate_unique_filename(original_filename, &base_dir_with_profile).await;
         let file_path = base_dir_with_profile.join(&unique_filename);
 
         let relative_path = format!("{}/{}", FileType::ProfilePicture, unique_filename);
@@ -215,19 +217,20 @@ impl FileService {
     }
 
     /// Writes the file's byte data to the disk, creating directories as needed.
-    fn write_file_to_disk(&self, file_path: &FilePath, data: &[u8]) -> Result<(), AppError> {
+    /// Uses tokio::fs so the blocking I/O runs off the async worker threads.
+    async fn write_file_to_disk(&self, file_path: &FilePath, data: &[u8]) -> Result<(), AppError> {
         let parent = file_path.parent().ok_or(AppError::InternalError)?;
-        std::fs::create_dir_all(parent).map_err(|err| {
+        tokio::fs::create_dir_all(parent).await.map_err(|err| {
             tracing::error!("Error creating directory: {}", err);
             AppError::InternalError
         })?;
 
-        std::fs::write(file_path, data).map_err(|err| {
+        tokio::fs::write(file_path, data).await.map_err(|err| {
             tracing::error!("Error writing file: {}", err);
             AppError::InternalError
         })?;
 
-        if !file_path.exists() {
+        if !tokio::fs::try_exists(file_path).await.unwrap_or(false) {
             tracing::error!("File was not written successfully.");
             return Err(AppError::InternalError);
         }
