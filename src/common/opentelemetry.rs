@@ -42,16 +42,12 @@ pub fn init_traces() -> SdkTracerProvider {
         other => panic!("Unsupported OTLP protocol: {}", other),
     };
     // Create the OTLP HTTP exporter using the specified endpoint and protocol.
-    let exporter = match protocol {
-        Protocol::HttpJson | Protocol::HttpBinary => {
-            opentelemetry_otlp::HttpExporterBuilder::default()
-                .with_endpoint(otlp_endpoint)
-                .with_protocol(protocol)
-                .build_span_exporter()
-                .expect("Failed to create trace exporter")
-        }
-        _ => panic!("Unsupported OTLP protocol"),
-    };
+    let exporter = opentelemetry_otlp::SpanExporter::builder()
+        .with_http()
+        .with_endpoint(otlp_endpoint)
+        .with_protocol(protocol)
+        .build()
+        .expect("Failed to create trace exporter");
 
     // Build and return the tracer provider with batch exporter and resource.
     SdkTracerProvider::builder()
