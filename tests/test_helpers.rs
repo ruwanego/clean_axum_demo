@@ -70,9 +70,7 @@ pub async fn create_test_router() -> Router {
     let pool = setup_test_db().await.unwrap();
     let config = Config::from_env().unwrap();
     let state = build_app_state(pool, config.clone());
-    let app = create_router(state);
-
-    app
+    create_router(state)
 }
 
 /// Helper function gets the authentication token

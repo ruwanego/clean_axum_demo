@@ -63,3 +63,11 @@ opentelemetry = [
     "dep:opentelemetry-appender-tracing",
     "dep:tracing-opentelemetry",
 ]
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"
