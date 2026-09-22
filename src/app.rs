@@ -38,15 +38,15 @@ use crate::{
 
 use utoipa_swagger_ui::SwaggerUi;
 
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use regex::Regex;
 
 /// List of regex patterns representing disallowed content to block in requests.
 /// These patterns are applied to both request bodies and URL query strings.
 /// Used to detect and reject potentially dangerous input (e.g., script tags).
 /// This is just sample. In real app this can be loaded from repository
-pub static FORBIDDEN_PATTERNS: Lazy<Vec<Regex>> =
-    Lazy::new(|| vec![Regex::new(r"(?i)<\s*script\b[^>]*>").unwrap()]);
+pub static FORBIDDEN_PATTERNS: LazyLock<Vec<Regex>> =
+    LazyLock::new(|| vec![Regex::new(r"(?i)<\s*script\b[^>]*>").unwrap()]);
 
 fn create_swagger_ui() -> SwaggerUi {
     SwaggerUi::new("/docs")

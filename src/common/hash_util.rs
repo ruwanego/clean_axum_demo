@@ -1,18 +1,16 @@
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    password_hash::{phc::PasswordHash, PasswordHasher, PasswordVerifier},
     Argon2,
 };
 
 /// Hash the provided password using Argon2.
 pub fn hash_password(password: &str) -> Result<String, argon2::Error> {
-    let salt = SaltString::generate(&mut OsRng);
-
     // Argon2 with default params (Argon2id v19)
     let argon2 = Argon2::default();
 
-    // Hash password to PHC string ($argon2id$v=19$...)
+    // Hash password to PHC string ($argon2id$v=19$...), generating a random salt
     let hash_password = argon2
-        .hash_password(password.as_bytes(), &salt)
+        .hash_password(password.as_bytes())
         .map_err(|e| {
             tracing::error!("Error hashing password: {}", e);
             argon2::Error::AlgorithmInvalid
