@@ -32,7 +32,7 @@ use crate::{
     domains::{
         auth::{UserAuthApiDoc, user_auth_routes},
         device::{DeviceApiDoc, device_routes},
-        file::{FileApiDoc, file_routes},
+        file::{FileApiDoc, file_routes, private_asset_routes},
         user::{UserApiDoc, user_routes},
     },
 };
@@ -100,10 +100,11 @@ pub fn create_router(state: AppState) -> Router {
         ServeDir::new(state.config.assets_public_path.clone()),
     );
 
+    // Private assets are streamed from the configured storage backend (local or S3)
     let private_assets_routes = Router::new()
-        .nest_service(
+        .nest(
             state.config.assets_private_url.as_str(),
-            ServeDir::new(state.config.assets_private_path.clone()),
+            private_asset_routes(),
         )
         // enforce JWT authentication
         .route_layer(middleware::from_fn_with_state(

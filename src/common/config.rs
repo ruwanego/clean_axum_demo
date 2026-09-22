@@ -38,6 +38,38 @@ pub struct Config {
 
     pub asset_allowed_extensions_pattern: Regex,
     pub asset_max_size: usize,
+
+    /// Where uploaded files are stored (STORAGE_BACKEND).
+    pub storage_backend: StorageBackend,
+}
+
+/// Storage backend for uploaded files.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StorageBackend {
+    /// Local disk under `ASSETS_PRIVATE_PATH` (single instance only).
+    Local,
+    /// S3-compatible object storage; credentials come from the standard `AWS_*` variables.
+    S3 { bucket: String },
+}
+
+impl StorageBackend {
+    fn from_env() -> Result<Self, ConfigError> {
+        match env::var("STORAGE_BACKEND")
+            .unwrap_or_else(|_| "local".into())
+            .trim()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "local" => Ok(Self::Local),
+            "s3" => Ok(Self::S3 {
+                bucket: required("S3_BUCKET")?,
+            }),
+            other => Err(ConfigError {
+                var: "STORAGE_BACKEND",
+                reason: format!("invalid value {other:?}: expected \"local\" or \"s3\""),
+            }),
+        }
+    }
 }
 
 /// ConfigError names the environment variable that is missing or invalid.
@@ -145,6 +177,7 @@ impl Config {
 
             asset_allowed_extensions_pattern,
             asset_max_size: parsed_or("ASSET_MAX_SIZE", 50 * 1024 * 1024)?, // Default to 50MB
+            storage_backend: StorageBackend::from_env()?,
         })
     }
 }
@@ -178,6 +211,7 @@ impl fmt::Debug for Config {
                 &self.asset_allowed_extensions_pattern.as_str(),
             )
             .field("asset_max_size", &self.asset_max_size)
+            .field("storage_backend", &self.storage_backend)
             .finish()
     }
 }

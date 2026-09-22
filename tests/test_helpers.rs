@@ -69,7 +69,7 @@ pub async fn setup_test_db() -> Result<PgPool, Box<dyn std::error::Error>> {
 pub async fn create_test_router() -> Router {
     let pool = setup_test_db().await.unwrap();
     let config = Config::from_env().unwrap();
-    let state = build_app_state(pool, config.clone());
+    let state = build_app_state(pool, config.clone()).expect("build app state");
     create_router(state)
 }
 

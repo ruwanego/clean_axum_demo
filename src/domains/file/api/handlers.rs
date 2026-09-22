@@ -6,10 +6,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
-use std::path::Path as FilePath;
-use tokio_util::io::ReaderStream;
-
-/// This function serves a protected file from the server's filesystem.
+/// This function serves a protected file from storage.
 /// It will return the file as a response with the appropriate content type and headers.
 /// If the file is not found, it will return a 404 error.
 #[utoipa::path(
@@ -18,7 +15,7 @@ use tokio_util::io::ReaderStream;
     responses((status = 200, description = "Serve protected file")),
     tag = "Files"
 )]
-/// Serve a protected file from the server's filesystem.
+/// Serve a protected file from storage.
 pub async fn serve_protected_file(
     State(state): State<AppState>,
     Path(file_id): Path<String>,
@@ -28,24 +25,11 @@ pub async fn serve_protected_file(
     // If the file is not found, return a 404.
     let file_metadata = file_metadata.ok_or_else(|| AppError::NotFound("File not found".into()))?;
 
-    // Build the full file system path.
-    let assets_private_path = state.config.assets_private_path.clone();
-    let base_dir = assets_private_path.as_str();
-
-    let file_path = FilePath::new(base_dir).join(file_metadata.file_relative_path);
-
-    // Open and stream the file.
-    let file = tokio::fs::File::open(file_path)
-        .await
-        .map_err(|err| match err.kind() {
-            std::io::ErrorKind::NotFound => AppError::NotFound("File not found".into()),
-            _ => {
-                tracing::error!("Error opening file: {}", err);
-                AppError::InternalError
-            }
-        })?;
-    let stream = ReaderStream::new(file);
-    let body = Body::from_stream(stream);
+    // Stream the file from storage (local disk or S3).
+    let stream = state
+        .file_service
+        .read_file(&file_metadata.file_relative_path)
+        .await?;
 
     // Build a full response with content type header set to the file's MIME type.
     // Here we use file_metadata.content_type that should contain a valid MIME string.
@@ -56,16 +40,38 @@ pub async fn serve_protected_file(
             header::CONTENT_DISPOSITION,
             format!(
                 "attachment; filename=\"{}\"",
-                file_metadata.origin_file_name
+                sanitize_filename(&file_metadata.origin_file_name)
             ),
         )
-        .body(body)
+        .body(Body::from_stream(stream))
         .map_err(|err| {
             tracing::error!("Error building response: {}", err);
             AppError::InternalError
         })?;
 
     Ok(response)
+}
+
+/// Serves a private asset by its storage key, e.g.
+/// `GET /assets/private/profile_picture/<name>`. Requires authentication (see `app.rs`).
+pub async fn serve_private_asset(
+    State(state): State<AppState>,
+    Path(key): Path<String>,
+) -> Result<impl IntoResponse, AppError> {
+    let stream = state.file_service.read_file(&key).await?;
+    let content_type = mime_guess::from_path(&key).first_or_octet_stream();
+
+    Ok((
+        [(header::CONTENT_TYPE, content_type.to_string())],
+        Body::from_stream(stream),
+    ))
+}
+
+/// Keeps a user-supplied file name safe inside a quoted header value.
+fn sanitize_filename(name: &str) -> String {
+    name.chars()
+        .filter(|c| !c.is_control() && !matches!(c, '"' | '\\'))
+        .collect()
 }
 
 /// This function deletes a file from the server's filesystem and database.

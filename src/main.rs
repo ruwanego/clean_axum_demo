@@ -70,7 +70,7 @@ async fn serve(pool: PgPool, config: Config) -> Result<(), BoxError> {
     // Secrets are redacted by Config's Debug impl.
     info!(?config, "Starting with configuration");
 
-    let state = build_app_state(pool.clone(), config.clone());
+    let state = build_app_state(pool.clone(), config.clone())?;
     let app = create_router(state);
 
     let addr = format!("{}:{}", config.service_host, config.service_port);

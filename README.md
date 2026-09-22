@@ -329,6 +329,30 @@ naming the variable. Commonly used variables:
 | `RUN_MIGRATIONS_ON_START` | `false` | |
 | `LOG_FORMAT` | `pretty` | `json` for one JSON object per line |
 | `RUST_LOG` | `info,...` | request/response bodies are logged at `debug` only |
+| `STORAGE_BACKEND` | `local` | `local` or `s3` (see below) |
+| `S3_BUCKET` | required for `s3` | plus the standard `AWS_*` variables |
+
+### File storage
+
+Uploaded files go through a `FileStorage` trait (`src/common/storage.rs`), so the
+backend is an attached resource chosen by config:
+
+- `STORAGE_BACKEND=local` (default) stores files under `ASSETS_PRIVATE_PATH`. Fine for a
+  single instance; in compose they live on the `private_assets` volume.
+- `STORAGE_BACKEND=s3` stores them in `S3_BUCKET` on any S3-compatible service, using
+  `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` and, for MinIO/R2,
+  `AWS_ENDPOINT` (and `AWS_ALLOW_HTTP=true` for plain HTTP). Use this to run more than
+  one instance.
+
+For a local S3 to test against:
+
+```bash
+docker compose --profile s3 up -d minio minio-init   # MinIO + bucket; console on :9001
+```
+
+Private files are served by `GET {ASSETS_PRIVATE_URL}/{key}` (authenticated) and
+`GET /file/{file_id}`. New uploads get collision-free `<uuid>.<ext>` keys; the original
+file name is kept as metadata only.
 
 ### Migrations and admin tasks
 

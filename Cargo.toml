@@ -19,7 +19,6 @@ utoipa = { version = "5.3.1", features = ["axum_extras", "uuid", "chrono"] }
 utoipa-swagger-ui = { version = "9.0.1", features = ["axum"] }
 async-trait = "0.1.88"
 regex = "1.11.1"
-tokio-util = "0.7.14"
 http-body-util = "0.1.3"
 validator = { version = "0.21", features = ["derive"] }
 argon2 = "0.6"
@@ -42,6 +41,10 @@ opentelemetry_sdk = { version = "0.32", optional = true }
 opentelemetry-otlp = { version = "0.32", features = ["http-json", "http-proto"], optional = true }
 tracing-opentelemetry = { version = "0.33", optional = true }
 simple_dto_mapper_derive = "0.1.1"
+object_store = { version = "0.14", features = ["aws"] }
+mime_guess = "2"
+futures-util = "0.3"
+bytes = "1"
 
 [features]
 opentelemetry = [

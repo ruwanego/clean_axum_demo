@@ -7,7 +7,11 @@ use async_trait::async_trait;
 use sqlx::{PgPool, Postgres, Transaction};
 
 use crate::{
-    common::{config::Config, error::AppError},
+    common::{
+        config::Config,
+        error::AppError,
+        storage::{ByteStream, FileStorage},
+    },
     domains::file::dto::file_dto::{UploadFileDto, UploadedFileDto},
 };
 
@@ -17,7 +21,11 @@ use crate::{
 /// retrieving metadata, and deleting files.
 pub trait FileServiceTrait: Send + Sync {
     /// constructor for the service.
-    fn create_service(config: Config, pool: PgPool) -> Arc<dyn FileServiceTrait>
+    fn create_service(
+        config: Config,
+        pool: PgPool,
+        storage: Arc<dyn FileStorage>,
+    ) -> Arc<dyn FileServiceTrait>
     where
         Self: Sized;
 
@@ -35,4 +43,7 @@ pub trait FileServiceTrait: Send + Sync {
 
     /// Deletes a file by its file ID and returns a confirmation message.
     async fn delete_file(&self, file_id: String) -> Result<String, AppError>;
+
+    /// Streams the stored file at `relative_path` (e.g. `profile_picture/<name>`).
+    async fn read_file(&self, relative_path: &str) -> Result<ByteStream, AppError>;
 }

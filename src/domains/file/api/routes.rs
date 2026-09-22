@@ -49,3 +49,9 @@ pub fn file_routes() -> Router<AppState> {
         .route("/{file_id}", get(serve_protected_file))
         .route("/{file_id}", delete(delete_file))
 }
+
+/// Routes serving private assets by storage key (e.g. `/profile_picture/<name>`).
+/// Nest under `ASSETS_PRIVATE_URL` and protect with authentication.
+pub fn private_asset_routes() -> Router<AppState> {
+    Router::new().route("/{*key}", get(serve_private_asset))
+}
