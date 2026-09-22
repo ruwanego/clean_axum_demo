@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
+use sqlx::PgPool;
+
 use crate::domains::{
     auth::AuthServiceTrait, device::DeviceServiceTrait, file::FileServiceTrait,
     user::UserServiceTrait,
 };
 
-use super::config::Config;
+use super::{config::Config, jwt::Keys};
 
 /// AppState is a struct that holds the application-wide shared state.
 /// It is passed to request handlers via Axum's extension mechanism.
@@ -13,6 +15,10 @@ use super::config::Config;
 pub struct AppState {
     /// Global application configuration.
     pub config: Config,
+    /// Database pool, used directly only for readiness checks.
+    pub pool: PgPool,
+    /// JWT signing/verification keys derived from config.
+    pub jwt_keys: Arc<Keys>,
     /// Service handling authentication-related logic.
     pub auth_service: Arc<dyn AuthServiceTrait>,
     /// Service handling user-related logic.
@@ -27,6 +33,8 @@ impl AppState {
     /// Creates a new instance of AppState with the provided dependencies.
     pub fn new(
         config: Config,
+        pool: PgPool,
+        jwt_keys: Arc<Keys>,
         auth_service: Arc<dyn AuthServiceTrait>,
         user_service: Arc<dyn UserServiceTrait>,
         device_service: Arc<dyn DeviceServiceTrait>,
@@ -34,6 +42,8 @@ impl AppState {
     ) -> Self {
         Self {
             config,
+            pool,
+            jwt_keys,
             auth_service,
             user_service,
             device_service,

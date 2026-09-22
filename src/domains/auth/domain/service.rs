@@ -8,7 +8,7 @@ use sqlx::PgPool;
 use crate::{
     common::{
         error::AppError,
-        jwt::{AuthBody, AuthPayload},
+        jwt::{AuthBody, AuthPayload, Keys},
     },
     domains::auth::dto::auth_dto::AuthUserDto,
 };
@@ -18,7 +18,7 @@ use crate::{
 /// Implementors are responsible for handling user creation and login logic.
 pub trait AuthServiceTrait: Send + Sync {
     /// constructor for the service.
-    fn create_service(pool: PgPool) -> Arc<dyn AuthServiceTrait>
+    fn create_service(pool: PgPool, keys: Arc<Keys>) -> Arc<dyn AuthServiceTrait>
     where
         Self: Sized;
 

@@ -1,5 +1,5 @@
 use axum::{
-    extract::Request,
+    extract::{Request, State},
     middleware::Next,
     response::{IntoResponse, Response},
 };
@@ -7,26 +7,27 @@ use axum::{
 use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
-use std::sync::LazyLock;
-use std::{env, fmt::Display};
+use std::fmt::Display;
+use std::sync::Arc;
 use utoipa::ToSchema;
 
-use super::error::AppError;
+use super::{config::Config, error::AppError};
 
-/// JWT_SECRET_KEY is the environment variable that holds the secret key for JWT encoding and decoding.
-/// It is loaded from the environment variables using the dotenv crate.
-/// The secret key is used to sign the JWT tokens and should be kept secret.
-pub static KEYS: LazyLock<Keys> = LazyLock::new(|| {
-    dotenvy::dotenv().ok();
-
-    let secret = env::var("JWT_SECRET_KEY").expect("JWT_SECRET_KEY must be set");
-    Keys::new(secret.as_bytes())
-});
-
-/// Keys is a struct that holds the encoding and decoding keys for JWT.
+/// Keys is a struct that holds the encoding and decoding keys for JWT,
+/// plus the token lifetime. It is built from `Config` (JWT_SECRET_KEY, JWT_EXPIRY_SECS).
 pub struct Keys {
     pub encoding: EncodingKey,
     pub decoding: DecodingKey,
+    pub expiry: Duration,
+}
+
+impl Keys {
+    /// Builds the keys from the application config.
+    pub fn from_config(config: &Config) -> Arc<Self> {
+        let mut keys = Self::new(config.jwt_secret.as_bytes());
+        keys.expiry = Duration::seconds(config.jwt_expiry_secs);
+        Arc::new(keys)
+    }
 }
 
 /// The Keys struct is used to create the encoding and decoding keys for JWT.
@@ -35,6 +36,7 @@ impl Keys {
         Self {
             encoding: EncodingKey::from_secret(secret),
             decoding: DecodingKey::from_secret(secret),
+            expiry: Duration::hours(24),
         }
     }
 }
@@ -101,21 +103,25 @@ pub struct AuthPayload {
 }
 
 /// make_jwt_token is a function that creates a JWT token.
-/// It takes a user ID as a parameter and returns a Result with the JWT token or an error.
-pub fn make_jwt_token(user_id: &str) -> Result<String, AppError> {
+/// It takes the keys and a user ID and returns a Result with the JWT token or an error.
+pub fn make_jwt_token(keys: &Keys, user_id: &str) -> Result<String, AppError> {
+    let now = Utc::now();
     let claims = Claims {
         sub: user_id.to_string(),
-        ..Default::default()
+        exp: (now + keys.expiry).timestamp() as usize,
+        iat: now.timestamp() as usize,
     };
-    encode(&Header::default(), &claims, &KEYS.encoding).map_err(|_| AppError::TokenCreation)
+    encode(&Header::default(), &claims, &keys.encoding).map_err(|_| AppError::TokenCreation)
 }
 
 /// Middleware to validate JWT tokens.
 /// If the token is valid, the request proceeds; otherwise, a 401 Unauthorized is returned.
-pub async fn jwt_auth<B>(mut req: Request<B>, next: Next) -> Result<Response, Response>
-where
-    B: Send + Into<axum::body::Body>,
-{
+/// Attach with `middleware::from_fn_with_state(keys, jwt_auth)`.
+pub async fn jwt_auth(
+    State(keys): State<Arc<Keys>>,
+    mut req: Request,
+    next: Next,
+) -> Result<Response, Response> {
     // Try to extract and trim the token in one go.
     let token = req
         .headers()
@@ -128,12 +134,12 @@ where
 
     // Validate and decode the token.
     let token_data =
-        decode::<Claims>(token, &KEYS.decoding, &Validation::default()).map_err(|err| {
-            tracing::error!("Error decoding token: {:?}", err);
+        decode::<Claims>(token, &keys.decoding, &Validation::default()).map_err(|err| {
+            tracing::warn!("Error decoding token: {:?}", err);
             AppError::InvalidToken.into_response()
         })?;
 
     // Insert the decoded claims into the request extensions.
     req.extensions_mut().insert(token_data.claims);
-    Ok(next.run(req.map(Into::into)).await)
+    Ok(next.run(req).await)
 }

@@ -1,0 +1,2 @@
+# sqlx checksums migration files; keep line endings identical on every platform.
+migrations/*.sql text eol=lf

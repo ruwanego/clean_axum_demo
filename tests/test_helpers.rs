@@ -59,6 +59,9 @@ pub async fn setup_test_db() -> Result<PgPool, Box<dyn std::error::Error>> {
         .connect(&config.database_url)
         .await?;
 
+    // Apply the same migrations the release runs (idempotent; guarded by an advisory lock).
+    sqlx::migrate!("./migrations").run(&pool).await?;
+
     Ok(pool)
 }
 
