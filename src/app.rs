@@ -38,8 +38,8 @@ use crate::{
 
 use utoipa_swagger_ui::SwaggerUi;
 
-use std::sync::LazyLock;
 use regex::Regex;
+use std::sync::LazyLock;
 
 /// List of regex patterns representing disallowed content to block in requests.
 /// These patterns are applied to both request bodies and URL query strings.

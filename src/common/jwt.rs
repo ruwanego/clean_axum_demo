@@ -1,7 +1,7 @@
 use axum::{
     extract::{Request, State},
     middleware::Next,
-    response::{IntoResponse, Response},
+    response::Response,
 };
 
 use chrono::{Duration, Utc};
@@ -121,7 +121,7 @@ pub async fn jwt_auth(
     State(keys): State<Arc<Keys>>,
     mut req: Request,
     next: Next,
-) -> Result<Response, Response> {
+) -> Result<Response, AppError> {
     // Try to extract and trim the token in one go.
     let token = req
         .headers()
@@ -130,13 +130,13 @@ pub async fn jwt_auth(
         .and_then(|header| header.strip_prefix("Bearer "))
         .map(|t| t.trim())
         .filter(|t| !t.is_empty())
-        .ok_or_else(|| AppError::InvalidToken.into_response())?;
+        .ok_or(AppError::InvalidToken)?;
 
     // Validate and decode the token.
     let token_data =
         decode::<Claims>(token, &keys.decoding, &Validation::default()).map_err(|err| {
             tracing::warn!("Error decoding token: {:?}", err);
-            AppError::InvalidToken.into_response()
+            AppError::InvalidToken
         })?;
 
     // Insert the decoded claims into the request extensions.

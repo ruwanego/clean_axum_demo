@@ -9,12 +9,10 @@ pub fn hash_password(password: &str) -> Result<String, argon2::Error> {
     let argon2 = Argon2::default();
 
     // Hash password to PHC string ($argon2id$v=19$...), generating a random salt
-    let hash_password = argon2
-        .hash_password(password.as_bytes())
-        .map_err(|e| {
-            tracing::error!("Error hashing password: {}", e);
-            argon2::Error::AlgorithmInvalid
-        })?;
+    let hash_password = argon2.hash_password(password.as_bytes()).map_err(|e| {
+        tracing::error!("Error hashing password: {}", e);
+        argon2::Error::AlgorithmInvalid
+    })?;
 
     Ok(hash_password.to_string())
 }

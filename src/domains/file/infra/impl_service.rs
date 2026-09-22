@@ -55,7 +55,7 @@ impl FileServiceTrait for FileService {
 
         let file_url = format!(
             "{}/profile/{}",
-            self.config.assets_private_url, &unique_filename
+            self.config.assets_private_url, unique_filename
         );
 
         let create_file_dto = CreateFileDto {
