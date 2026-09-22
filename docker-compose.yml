@@ -1,28 +1,76 @@
+# Local stack. Values come from `.env` (copy .env.example); docker compose reads it
+# automatically for ${VAR} substitution.
 services:
   postgres:
     image: postgres:15
     container_name: clean_axum_app_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: testuser
-      POSTGRES_PASSWORD: pass
-      POSTGRES_DB: testdb
+      POSTGRES_USER: ${POSTGRES_USER:-testuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-testdb}
     ports:
       - "5432:5432"
-    volumes:
-      - ./db-seed:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
 
-  app:
+  # One-off admin process: apply schema migrations using the same release image.
+  migrate:
     build:
       context: .
       dockerfile: Dockerfile
+    image: clean_axum_demo:local
+    command: ["migrate"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment: &app_db_env
+      DATABASE_URL: postgres://${POSTGRES_USER:-testuser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-testdb}
+      RUN_MIGRATIONS_ON_START: "false"
+
+  # One-off admin process: load development seed data once (skipped if users exist).
+  seed:
+    image: postgres:15
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-testuser}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB:-testdb}
+    volumes:
+      - ./db-seed:/seed:ro
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        if [ "$$(psql -tAc 'SELECT count(*) FROM users')" = "0" ]; then
+          psql -v ON_ERROR_STOP=1 -f /seed/02-seed.sql
+        else
+          echo "users table not empty, skipping seed"
+        fi
+
+  app:
+    image: clean_axum_demo:local
     container_name: clean_axum_app
     depends_on:
-      - postgres
+      seed:
+        condition: service_completed_successfully
     ports:
       - "8080:8080"
     env_file:
-      - .env      
+      - .env
     environment:
-      - DATABASE_URL=postgres://testuser:pass@clean_axum_app_postgres:5432/testdb
+      <<: *app_db_env
+      SERVICE_HOST: 0.0.0.0
+      SERVICE_PORT: "8080"
+    volumes:
+      - private_assets:/app/assets/private
 
+volumes:
+  private_assets:

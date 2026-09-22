@@ -4,7 +4,7 @@ use crate::{
     common::{
         error::AppError,
         hash_util,
-        jwt::{make_jwt_token, AuthBody, AuthPayload},
+        jwt::{make_jwt_token, AuthBody, AuthPayload, Keys},
     },
     domains::auth::{
         domain::{model::UserAuth, repository::UserAuthRepository, service::AuthServiceTrait},
@@ -21,16 +21,18 @@ use sqlx::PgPool;
 pub struct AuthService {
     pool: PgPool,
     repo: Arc<dyn UserAuthRepository + Send + Sync>,
+    keys: Arc<Keys>,
 }
 
 /// Implementation of the AuthService
 #[async_trait::async_trait]
 impl AuthServiceTrait for AuthService {
     /// constructor for the service.
-    fn create_service(pool: PgPool) -> Arc<dyn AuthServiceTrait> {
+    fn create_service(pool: PgPool, keys: Arc<Keys>) -> Arc<dyn AuthServiceTrait> {
         Arc::new(Self {
             pool,
             repo: Arc::new(UserAuthRepo {}),
+            keys,
         })
     }
 
@@ -80,7 +82,8 @@ impl AuthServiceTrait for AuthService {
             return Err(AppError::WrongCredentials);
         }
 
-        let token = make_jwt_token(&user_auth.user_id).map_err(|_| AppError::InternalError)?;
+        let token =
+            make_jwt_token(&self.keys, &user_auth.user_id).map_err(|_| AppError::InternalError)?;
 
         Ok(AuthBody::new(token))
     }

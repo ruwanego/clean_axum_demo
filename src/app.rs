@@ -1,10 +1,10 @@
 use axum::{
     body::{Body, Bytes},
     error_handling::HandleErrorLayer,
-    extract::{DefaultBodyLimit, Request},
+    extract::{DefaultBodyLimit, Request, State},
     http::{
         header::{AUTHORIZATION, CONTENT_TYPE},
-        Method, StatusCode,
+        HeaderValue, Method, StatusCode,
     },
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -15,7 +15,7 @@ use http_body_util::BodyExt;
 use std::time::Duration;
 use tower::ServiceBuilder;
 use tower_http::{
-    cors::{Any, CorsLayer},
+    cors::{AllowOrigin, Any, CorsLayer},
     services::ServeDir,
     trace::TraceLayer,
 };
@@ -63,13 +63,13 @@ pub fn create_router(state: AppState) -> Router {
     // Build a CORS layer that applies to everyone
     let cors = CorsLayer::new()
         .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
-        .allow_origin(Any)
+        .allow_origin(cors_allow_origin(&state.config.cors_allowed_origins))
         .allow_headers([AUTHORIZATION, CONTENT_TYPE]);
 
     // Create a common middleware stack for error handling, timeouts, and CORS.
     let middleware_stack = ServiceBuilder::new()
         .layer(HandleErrorLayer::new(handle_error))
-        .timeout(Duration::from_secs(1800))
+        .timeout(Duration::from_secs(state.config.request_timeout_secs))
         .layer(cors);
 
     // /auth routes (login, register, refresh, etc.) — no logging here
@@ -86,7 +86,10 @@ pub fn create_router(state: AppState) -> Router {
         // See https://docs.rs/axum/latest/axum/extract/struct.Multipart.html
         .layer(DefaultBodyLimit::max(state.config.asset_max_size))
         // enforce JWT authentication
-        .route_layer(middleware::from_fn(jwt::jwt_auth))
+        .route_layer(middleware::from_fn_with_state(
+            state.jwt_keys.clone(),
+            jwt::jwt_auth,
+        ))
         // attach inspecter
         .layer(middleware::from_fn(make_request_response_inspecter(true)));
 
@@ -102,7 +105,10 @@ pub fn create_router(state: AppState) -> Router {
             ServeDir::new(state.config.assets_private_path.clone()),
         )
         // enforce JWT authentication
-        .route_layer(middleware::from_fn(jwt::jwt_auth))
+        .route_layer(middleware::from_fn_with_state(
+            state.jwt_keys.clone(),
+            jwt::jwt_auth,
+        ))
         // attach inspecter
         .layer(middleware::from_fn(make_request_response_inspecter(true)));
 
@@ -112,6 +118,7 @@ pub fn create_router(state: AppState) -> Router {
     // and add the state
     Router::new()
         .route("/health", axum::routing::get(health_check))
+        .route("/ready", axum::routing::get(readiness_check))
         .merge(auth_router)
         .merge(protected_routes)
         .merge(create_swagger_ui())
@@ -143,8 +150,38 @@ pub fn create_router(state: AppState) -> Router {
         .with_state(state)
 }
 
+/// Builds the CORS origin policy from config. An empty list allows any origin.
+fn cors_allow_origin(origins: &[String]) -> AllowOrigin {
+    if origins.is_empty() {
+        return AllowOrigin::from(Any);
+    }
+    let values: Vec<HeaderValue> = origins
+        .iter()
+        .filter_map(|o| match HeaderValue::from_str(o) {
+            Ok(v) => Some(v),
+            Err(_) => {
+                tracing::warn!("Ignoring invalid CORS origin {o:?}");
+                None
+            }
+        })
+        .collect();
+    AllowOrigin::list(values)
+}
+
+/// Liveness probe: the process is up and serving HTTP.
 async fn health_check() -> &'static str {
     "OK\n"
+}
+
+/// Readiness probe: the process can reach its backing database.
+async fn readiness_check(State(state): State<AppState>) -> (StatusCode, &'static str) {
+    match sqlx::query("SELECT 1").execute(&state.pool).await {
+        Ok(_) => (StatusCode::OK, "READY\n"),
+        Err(err) => {
+            tracing::warn!("Readiness check failed: {err}");
+            (StatusCode::SERVICE_UNAVAILABLE, "NOT READY\n")
+        }
+    }
 }
 
 /// Fallback handler for unmatched routes
@@ -218,8 +255,9 @@ where
     };
 
     if let Ok(body_str) = std::str::from_utf8(&bytes) {
+        // Bodies can contain personal data, so they are only logged at debug level.
         if log_enabled {
-            tracing::info!("{} body = {:?}", direction, body_str);
+            tracing::debug!("{} body = {:?}", direction, truncate_for_log(body_str));
         }
 
         // inspect forbidden request body
@@ -247,8 +285,23 @@ where
     };
 
     if let Ok(body_str) = std::str::from_utf8(&bytes) {
-        tracing::debug!("{} body = {:?}", direction, body_str);
+        tracing::debug!("{} body = {:?}", direction, truncate_for_log(body_str));
     }
 
     Ok(bytes)
+}
+
+/// Maximum number of bytes of a body written to the log.
+const MAX_LOGGED_BODY_BYTES: usize = 4096;
+
+/// Truncates a body to `MAX_LOGGED_BODY_BYTES`, respecting UTF-8 boundaries.
+fn truncate_for_log(body: &str) -> &str {
+    if body.len() <= MAX_LOGGED_BODY_BYTES {
+        return body;
+    }
+    let mut end = MAX_LOGGED_BODY_BYTES;
+    while !body.is_char_boundary(end) {
+        end -= 1;
+    }
+    &body[..end]
 }

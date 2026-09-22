@@ -1,11 +1,7 @@
--- ===============================================
--- 01‐tables.sql  (compatible with MariaDB/MySQL & PostgreSQL)
--- ===============================================
+-- Initial schema (baseline). Uses IF NOT EXISTS so it also applies cleanly to
+-- databases created earlier from db-seed/01-tables.sql.
 
--- ------------------------------------------------
--- 1) users table
--- ------------------------------------------------
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id           VARCHAR(36)    PRIMARY KEY,
     username     VARCHAR(64)    NOT NULL UNIQUE,
     email        VARCHAR(128)   NOT NULL,
@@ -16,13 +12,13 @@ CREATE TABLE users (
 );
 
 -- Separate index for email lookup
-CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
 
 -- ------------------------------------------------
 -- 2) devices table
 -- ------------------------------------------------
-CREATE TABLE devices (
+CREATE TABLE IF NOT EXISTS devices (
     id           VARCHAR(36)    PRIMARY KEY,
     user_id      VARCHAR(36)    NOT NULL,
     name         VARCHAR(128)   NOT NULL,
@@ -42,13 +38,13 @@ CREATE TABLE devices (
 );
 
 -- Index to speed up lookups by user_id
-CREATE INDEX idx_devices_user_id ON devices(user_id);
+CREATE INDEX IF NOT EXISTS idx_devices_user_id ON devices(user_id);
 
 
 -- ------------------------------------------------
 -- 3) uploaded_files table
 -- ------------------------------------------------
-CREATE TABLE uploaded_files (
+CREATE TABLE IF NOT EXISTS uploaded_files (
     id                VARCHAR(36)  PRIMARY KEY,
     user_id           VARCHAR(36)  NOT NULL,
     file_name         VARCHAR(128) NOT NULL,  -- stored/generated file name
@@ -75,7 +71,7 @@ CREATE TABLE uploaded_files (
 -- ------------------------------------------------
 -- 4) user_auth table
 -- ------------------------------------------------
-CREATE TABLE user_auth (
+CREATE TABLE IF NOT EXISTS user_auth (
     user_id       VARCHAR(36)  PRIMARY KEY,
     password_hash VARCHAR(255) NOT NULL,
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,

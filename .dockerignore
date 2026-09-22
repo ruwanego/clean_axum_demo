@@ -1,0 +1,9 @@
+target/
+.git/
+.vscode/
+.env
+.env.*
+!.env.example
+assets/private/
+tests/
+ERD.png

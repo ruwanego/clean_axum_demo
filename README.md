@@ -61,8 +61,10 @@ Recommended layout:
 │   ├── asset/
 │   ├── test_helpers.rs                 # Shared setup and utilities for tests
 │   └── test_<feature>_routes.rs
-├── .env                                # Environment variables for local development
-├── .env.test                           # Environment overrides for test environment
+├── migrations/                         # sqlx schema migrations (run with `clean_axum_demo migrate`)
+├── db-seed/02-seed.sql                 # Development seed data
+├── .env.example                        # Template for local environment variables
+├── .env.test                           # Test-only environment values
 ```
 
 When adding a new feature module, register it in:
@@ -89,31 +91,35 @@ Choose your preferred setup:
 **Using Docker Compose:**
 
 ```bash
-docker-compose up --build
+cp .env.example .env        # then set JWT_SECRET_KEY (openssl rand -base64 32)
+docker compose up --build
 ```
+
+Compose starts Postgres, runs `clean_axum_demo migrate` and the dev seed as one-off
+services, then starts the app. Uploaded files are stored in the `private_assets` volume.
 
 To stop and clean up:
 
 ```bash
-docker-compose down --rmi all
+docker compose down --rmi all -v
 ```
 
 **Manual Setup:**
 
-1. Create database tables and seed data:
+1. Configure environment variables (see `.env.example` for the full list):
 
    ```bash
-   db-seed/01-tables.sql
-   db-seed/02-seed.sql
+   cp .env.example .env
    ```
 
-2. Configure environment variables in `.env`:
+2. Apply migrations and load seed data:
 
-   ```env
-   DATABASE_URL=postgres://testuser:pass@localhost:5432/testdb
-   JWT_SECRET_KEY=your_super_secret_key
-   SERVICE_PORT=8080
+   ```bash
+   cargo run -- migrate
+   psql "$DATABASE_URL" -f db-seed/02-seed.sql
    ```
+
+   With `RUN_MIGRATIONS_ON_START=true` the server also applies pending migrations on start.
 
 3. Prepare SQLx offline mode with validation:
 
@@ -126,6 +132,8 @@ docker-compose down --rmi all
    ```bash
    cargo run
    ```
+
+Health endpoints: `GET /health` (liveness) and `GET /ready` (checks the database).
 
 ---
 
@@ -297,15 +305,37 @@ See definitions in `common/dto.rs`.
 
 ## 🧪 Environment Configuration
 
-Configure via `.env` at the project root.  
-Set database URL, JWT secret, service port, and asset settings.
+All configuration comes from environment variables ([12-factor](https://12factor.net/config)).
+For local development, `cargo run` also loads a `.env` file if present; copy `.env.example`
+to `.env` to get started. `.env` is git-ignored and is never copied into the Docker image —
+in deployed environments, set real environment variables instead. `.env.test` holds
+test-only values used by the integration tests.
 
-Example `.env`:
+Missing required variables or invalid values stop the process at startup with an error
+naming the variable. Commonly used variables:
 
-```env
-DATABASE_URL=postgres://testuser:pass@localhost:5432/testdb
-JWT_SECRET_KEY=your_super_secret_key
-SERVICE_PORT=8080
+| Variable | Default | Notes |
+|---|---|---|
+| `DATABASE_URL` | required | |
+| `JWT_SECRET_KEY` | required | at least 32 characters |
+| `SERVICE_PORT` | required | |
+| `SERVICE_HOST` | `0.0.0.0` | |
+| `JWT_EXPIRY_SECS` | `86400` | |
+| `REQUEST_TIMEOUT_SECS` | `1800` | |
+| `CORS_ALLOWED_ORIGINS` | `*` | comma-separated list |
+| `DATABASE_CONNECT_RETRIES` | `5` | exponential backoff at startup |
+| `RUN_MIGRATIONS_ON_START` | `false` | |
+| `LOG_FORMAT` | `pretty` | `json` for one JSON object per line |
+| `RUST_LOG` | `info,...` | request/response bodies are logged at `debug` only |
+
+### Migrations and admin tasks
+
+Schema changes live in `migrations/` (sqlx format) and are embedded in the binary.
+Run them as a one-off process from the same release that serves traffic:
+
+```bash
+clean_axum_demo migrate                        # binary
+docker run --env-file .env <image> migrate     # container
 ```
 
 ---

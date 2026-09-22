@@ -1,3 +1,14 @@
 /target
 .DS_Store
 /.vscode
+
+# Local environment config (see .env.example). .env.test holds test-only values.
+.env
+.env.*
+!.env.example
+!.env.test
+
+# Runtime uploads are state, not code. Keep only the fixture used by tests.
+/assets/private/**
+!/assets/private/profile_picture/
+!/assets/private/profile_picture/images.jpeg
