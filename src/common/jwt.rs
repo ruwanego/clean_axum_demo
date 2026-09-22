@@ -24,19 +24,18 @@ pub struct Keys {
 impl Keys {
     /// Builds the keys from the application config.
     pub fn from_config(config: &Config) -> Arc<Self> {
-        let mut keys = Self::new(config.jwt_secret.as_bytes());
-        keys.expiry = Duration::seconds(config.jwt_expiry_secs);
-        Arc::new(keys)
+        Arc::new(Self::new(
+            config.jwt_secret.as_bytes(),
+            Duration::seconds(config.jwt_expiry_secs),
+        ))
     }
-}
 
-/// The Keys struct is used to create the encoding and decoding keys for JWT.
-impl Keys {
-    fn new(secret: &[u8]) -> Self {
+    /// Creates HS256 encoding/decoding keys from a shared secret and token lifetime.
+    pub fn new(secret: &[u8], expiry: Duration) -> Self {
         Self {
             encoding: EncodingKey::from_secret(secret),
             decoding: DecodingKey::from_secret(secret),
-            expiry: Duration::hours(24),
+            expiry,
         }
     }
 }
