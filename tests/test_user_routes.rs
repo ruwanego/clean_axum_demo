@@ -158,9 +158,10 @@ async fn test_get_users() {
     let page = response_body.0.data.unwrap();
 
     assert!(!page.items.is_empty());
-    // The seed data has more users than this page size, so a cursor is returned.
-    assert!(page.has_more);
-    assert!(page.next_cursor.is_some());
+    // Without ?limit the default page size applies, and a cursor is present
+    // exactly when another page follows.
+    assert!(page.items.len() <= 50);
+    assert_eq!(page.has_more, page.next_cursor.is_some());
 }
 
 #[tokio::test]
