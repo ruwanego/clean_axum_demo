@@ -1,4 +1,6 @@
 use crate::common::dto::RestApiResponse;
+use crate::common::etag::{check_if_match, entity_tag, is_not_modified};
+use crate::common::pagination::{Page, PageQuery};
 use crate::common::{app_state::AppState, error::AppError, jwt::Claims};
 
 use crate::domains::device::dto::device_dto::{
@@ -6,8 +8,9 @@ use crate::domains::device::dto::device_dto::{
 };
 use axum::{
     Extension, Json,
-    extract::{Path, State},
-    response::IntoResponse,
+    extract::{Path, Query, State},
+    http::{HeaderMap, StatusCode, header},
+    response::{IntoResponse, Response},
 };
 
 /// This function creates a router for getting a device by ID
@@ -21,9 +24,17 @@ use axum::{
 pub async fn get_device_by_id(
     State(state): State<AppState>,
     axum::extract::Path(id): axum::extract::Path<String>,
-) -> Result<impl IntoResponse, AppError> {
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
     let device = state.device_service.get_device_by_id(id).await?;
-    Ok(RestApiResponse::success(device))
+    let etag = entity_tag(&device.id, device.modified_at);
+
+    // The client already has this version.
+    if is_not_modified(&headers, &etag) {
+        return Ok((StatusCode::NOT_MODIFIED, [(header::ETAG, etag)]).into_response());
+    }
+
+    Ok(([(header::ETAG, etag)], RestApiResponse::success(device)).into_response())
 }
 
 /// This function creates a router for getting all devices
@@ -31,11 +42,15 @@ pub async fn get_device_by_id(
 #[utoipa::path(
     get,
     path = "/device",
-    responses((status = 200, description = "List all devices", body = [DeviceDto])),
+    params(PageQuery),
+    responses((status = 200, description = "List devices (cursor paginated)", body = Page<DeviceDto>)),
     tag = "Devices"
 )]
-pub async fn get_devices(State(state): State<AppState>) -> Result<impl IntoResponse, AppError> {
-    let devices = state.device_service.get_devices().await?;
+pub async fn get_devices(
+    State(state): State<AppState>,
+    Query(page): Query<PageQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let devices = state.device_service.get_devices(page).await?;
     Ok(RestApiResponse::success(devices))
 }
 
@@ -76,14 +91,21 @@ pub async fn update_device(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
     axum::extract::Path(id): axum::extract::Path<String>,
+    headers: HeaderMap,
     Json(payload): Json<UpdateDeviceDto>,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<Response, AppError> {
+    // Optimistic concurrency: reject the write if the caller's copy is stale.
+    let current = state.device_service.get_device_by_id(id.clone()).await?;
+    check_if_match(&headers, &entity_tag(&current.id, current.modified_at))?;
+
     // Set the modified_by field to the current user's ID.
     let mut payload = payload;
     payload.modified_by = claims.sub.clone().to_string();
 
     let device = state.device_service.update_device(id, payload).await?;
-    Ok(RestApiResponse::success(device))
+    let etag = entity_tag(&device.id, device.modified_at);
+
+    Ok(([(header::ETAG, etag)], RestApiResponse::success(device)).into_response())
 }
 
 /// This function creates a router for deleting a device

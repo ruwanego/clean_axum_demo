@@ -1,6 +1,8 @@
 use axum::http::{Method, StatusCode};
 
 use clean_axum_demo::common::dto::RestApiResponse;
+use clean_axum_demo::common::pagination::Page;
+use clean_axum_demo::common::problem::ProblemDetails;
 use clean_axum_demo::domains::device::dto::device_dto::{
     CreateDeviceDto, DeviceDto, UpdateDeviceDto, UpdateDeviceDtoWithIdDto, UpdateManyDevicesDto,
 };
@@ -78,14 +80,15 @@ async fn test_get_devices() {
 
     assert_eq!(parts.status, StatusCode::OK);
 
-    let response_body: RestApiResponse<Vec<DeviceDto>> = deserialize_json_body(body).await.unwrap();
+    let response_body: RestApiResponse<Page<DeviceDto>> =
+        deserialize_json_body(body).await.unwrap();
 
     assert_eq!(response_body.0.status, StatusCode::OK);
 
-    let devices = response_body.0.data.unwrap();
+    let page = response_body.0.data.unwrap();
 
-    // println!("devices: {:?}", devices);
-    assert!(!devices.is_empty());
+    assert!(!page.items.is_empty());
+    assert!(page.items.len() <= 50, "default page size applies");
 }
 
 #[tokio::test]
@@ -167,11 +170,10 @@ async fn test_delete_device_not_found() {
 
     assert_eq!(parts.status, StatusCode::NOT_FOUND);
 
-    let response_body: RestApiResponse<()> = deserialize_json_body(body).await.unwrap();
+    let problem: ProblemDetails = deserialize_json_body(body).await.unwrap();
 
-    assert_eq!(response_body.0.status, StatusCode::NOT_FOUND);
-    // println!("response_body.0.status: {:?}", response_body.0.status);
-    // println!("response_body.0.message: {:?}", response_body.0.message);
+    assert_eq!(problem.status, StatusCode::NOT_FOUND.as_u16());
+    assert_eq!(problem.type_uri, "/problems/not-found");
 }
 
 #[tokio::test]

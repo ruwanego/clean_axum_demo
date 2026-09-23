@@ -1,6 +1,7 @@
 // This module defines the `DeviceRepository` trait, which abstracts
 // the database operations related to device management.
 
+use crate::common::pagination::Cursor;
 use crate::domains::device::dto::device_dto::{
     CreateDeviceDto, UpdateDeviceDto, UpdateManyDevicesDto,
 };
@@ -15,7 +16,12 @@ use sqlx::{PgPool, Postgres, Transaction};
 /// Provides an interface for data persistence and retrieval of device records.
 pub trait DeviceRepository: Send + Sync {
     /// Retrieves all devices from the database.
-    async fn find_all(&self, pool: PgPool) -> Result<Vec<Device>, sqlx::Error>;
+    async fn find_page(
+        &self,
+        pool: PgPool,
+        cursor: Option<Cursor>,
+        limit: i64,
+    ) -> Result<Vec<Device>, sqlx::Error>;
 
     /// Finds a device by its unique identifier.
     async fn find_by_id(&self, pool: PgPool, id: String) -> Result<Option<Device>, sqlx::Error>;

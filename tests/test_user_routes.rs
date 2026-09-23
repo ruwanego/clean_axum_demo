@@ -1,7 +1,7 @@
 use axum::http::{Method, StatusCode};
 
 use clean_axum_demo::{
-    common::{dto::RestApiResponse, error::AppError},
+    common::{dto::RestApiResponse, error::AppError, pagination::Page, problem::ProblemDetails},
     domains::user::dto::user_dto::{CreateUserMultipartDto, SearchUserDto, UpdateUserDto, UserDto},
 };
 
@@ -151,14 +151,51 @@ async fn test_get_users() {
 
     assert_eq!(parts.status, StatusCode::OK);
 
-    let response_body: RestApiResponse<Vec<UserDto>> = deserialize_json_body(body).await.unwrap();
+    let response_body: RestApiResponse<Page<UserDto>> = deserialize_json_body(body).await.unwrap();
 
     assert_eq!(response_body.0.status, StatusCode::OK);
 
-    let user_dtos = response_body.0.data.unwrap();
+    let page = response_body.0.data.unwrap();
 
-    // println!("user_dtos: {:?}", user_dtos);
-    assert!(!user_dtos.is_empty());
+    assert!(!page.items.is_empty());
+    // The seed data has more users than this page size, so a cursor is returned.
+    assert!(page.has_more);
+    assert!(page.next_cursor.is_some());
+}
+
+#[tokio::test]
+async fn test_get_users_pages_without_repeating_or_skipping() {
+    let first = request_with_auth(Method::GET, "/user?limit=5").await;
+    let first: RestApiResponse<Page<UserDto>> =
+        deserialize_json_body(first.into_body()).await.unwrap();
+    let first = first.0.data.unwrap();
+
+    assert_eq!(first.items.len(), 5);
+    let cursor = first.next_cursor.clone().expect("cursor for the next page");
+
+    let second = request_with_auth(Method::GET, &format!("/user?limit=5&cursor={cursor}")).await;
+    let second: RestApiResponse<Page<UserDto>> =
+        deserialize_json_body(second.into_body()).await.unwrap();
+    let second = second.0.data.unwrap();
+
+    assert_eq!(second.items.len(), 5);
+
+    // The pages are disjoint and keep descending order.
+    let first_ids: Vec<&String> = first.items.iter().map(|u| &u.id).collect();
+    for user in &second.items {
+        assert!(
+            !first_ids.contains(&&user.id),
+            "page 2 repeated {}",
+            user.id
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_get_users_rejects_invalid_cursor() {
+    let response = request_with_auth(Method::GET, "/user?cursor=not-a-cursor").await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
@@ -262,11 +299,10 @@ async fn test_delete_user_not_found() {
 
     assert_eq!(parts.status, StatusCode::NOT_FOUND);
 
-    let response_body: RestApiResponse<()> = deserialize_json_body(body).await.unwrap();
+    let problem: ProblemDetails = deserialize_json_body(body).await.unwrap();
 
-    assert_eq!(response_body.0.status, StatusCode::NOT_FOUND);
-    // println!("response_body.0.status: {:?}", response_body.0.status);
-    // println!("response_body.0.message: {:?}", response_body.0.message);
+    assert_eq!(problem.status, StatusCode::NOT_FOUND.as_u16());
+    assert_eq!(problem.type_uri, "/problems/not-found");
 }
 
 #[tokio::test]

@@ -35,9 +35,13 @@ Recommended layout:
 │   │   ├── dto.rs                      # Shared/global DTOs
 │   │   ├── error.rs                    # AppError enum and error mappers
 │   │   ├── hash_util.rs                # Hashing utilities (e.g., bcrypt)
+│   │   ├── etag.rs                     # ETag / If-Match / If-None-Match helpers
 │   │   ├── jwt.rs                      # JWT encoding, decoding, and validation
 │   │   ├── multipart_helper.rs         # Multipart Helper
 │   │   ├── opentelemetry.rs            # OpenTelemetry setup
+│   │   ├── pagination.rs               # Cursor pagination (PageQuery, Cursor, Page)
+│   │   ├── problem.rs                  # RFC 9457 problem details
+│   │   ├── storage.rs                  # File storage backends (local disk / S3)
 │   │   └── ts_format.rs                # Custom timestamp serialization formatting
 
 │   ├── domains.rs                      # Domain modules declarations
@@ -272,10 +276,54 @@ All endpoints return a consistent JSON envelope:
 
 Implemented as:
 
-- `ApiResponse<T>` – generic response wrapper
-- `RestApiResponse<T>` – wrapper implementing Axum's `IntoResponse` trait
+- `ApiResponse<T>` - generic response wrapper
+- `RestApiResponse<T>` - wrapper implementing Axum's `IntoResponse` trait
 
-See definitions in `common/dto.rs`.
+See definitions in `common/dto.rs`. Errors use RFC 9457 problem details instead
+(see Error Handling below).
+
+### Cursor pagination
+
+List endpoints (`GET /user`, `GET /device`) are cursor paginated:
+
+```
+GET /user?limit=50
+GET /user?limit=50&cursor=MjAyNi0wOS0yMlQxMDoyMDozMFo...
+```
+
+```json
+{
+  "status": 200,
+  "message": "success",
+  "data": {
+    "items": [ ... ],
+    "next_cursor": "MjAyNi0wOS0yMlQxMDoyMDozMFo...",
+    "has_more": true
+  }
+}
+```
+
+`limit` defaults to 50 and is capped at 200. The cursor is an opaque pointer to the
+last row of the page, keyed on `(created_at, id)`, so rows are neither repeated nor
+skipped when the table changes between requests - unlike `OFFSET`. Pass
+`next_cursor` back as `?cursor=` until `has_more` is false. See `common/pagination.rs`.
+
+### Conditional requests (ETag)
+
+`GET /user/{id}` and `GET /device/{id}` return an `ETag` derived from the row's
+`modified_at`:
+
+- Send it back as `If-None-Match` on a re-read to get `304 Not Modified`.
+- Send it as `If-Match` on `PUT` to get `412 Precondition Failed` when someone else
+  changed the row first, instead of silently overwriting their edit.
+
+```bash
+ETAG=$(curl -sI -H "Authorization: Bearer $TOKEN" localhost:8080/user/$ID | grep -i '^etag' | cut -d' ' -f2-)
+curl -X PUT -H "If-Match: $ETAG" -H "Authorization: Bearer $TOKEN" ... localhost:8080/user/$ID
+```
+
+A `PUT` without `If-Match` is still accepted, so this is opt-in per client.
+See `common/etag.rs`.
 
 ---
 
@@ -291,15 +339,24 @@ See definitions in `common/dto.rs`.
 ## 🚨 Error Handling
 
 - Centralized `AppError` enum implements `IntoResponse`.
-- Errors map to appropriate HTTP status codes with JSON structure, e.g.:
+- Errors are returned as [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem
+  details with the `application/problem+json` content type:
 
 ```json
 {
+  "type": "/problems/validation-error",
+  "title": "Validation error",
   "status": 400,
-  "message": "Invalid request data",
-  "data": null
+  "detail": "Invalid input: email is not a valid email address"
 }
 ```
+
+- `detail` is always safe to show a client. Internal causes (database, storage) are
+  logged and replaced with a generic message, so table and constraint names never
+  leak into responses.
+- `type` values in use: `validation-error`, `not-found`, `unauthorized`,
+  `missing-credentials`, `forbidden`, `invalid-file`, `precondition-failed`,
+  `timeout`, `internal-error`. See `common/problem.rs`.
 
 ---
 

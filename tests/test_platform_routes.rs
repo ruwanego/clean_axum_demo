@@ -9,6 +9,18 @@ mod test_helpers;
 use test_helpers::{create_test_router, request, request_with_body};
 
 #[tokio::test]
+async fn test_errors_use_problem_json() {
+    // Unauthenticated request to a protected route.
+    let response = request(Method::GET, "/user").await;
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        response.headers()[axum::http::header::CONTENT_TYPE],
+        "application/problem+json"
+    );
+}
+
+#[tokio::test]
 async fn test_ready_checks_database() {
     let response = request(Method::GET, "/ready").await;
 

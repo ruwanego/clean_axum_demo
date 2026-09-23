@@ -1,3 +1,4 @@
+use crate::common::pagination::Cursor;
 use crate::domains::user::{
     domain::{model::User, repository::UserRepository},
     dto::user_dto::{CreateUserMultipartDto, SearchUserDto, UpdateUserDto},
@@ -45,10 +46,28 @@ const FIND_USER_INFO_QUERY: &str = r#"
 
 #[async_trait]
 impl UserRepository for UserRepo {
-    async fn find_all(&self, pool: PgPool) -> Result<Vec<User>, sqlx::Error> {
-        let users = sqlx::query_as::<_, User>(FIND_USER_QUERY)
-            .fetch_all(&pool)
-            .await?;
+    async fn find_page(
+        &self,
+        pool: PgPool,
+        cursor: Option<Cursor>,
+        limit: i64,
+    ) -> Result<Vec<User>, sqlx::Error> {
+        let mut builder = QueryBuilder::<_>::new(FIND_USER_QUERY);
+
+        // Keyset predicate: continue strictly after the last row of the previous page,
+        // using the same (created_at, id) ordering as below.
+        if let Some(cursor) = cursor {
+            builder.push(" AND (u.created_at, u.id) < (");
+            builder.push_bind(cursor.created_at);
+            builder.push(", ");
+            builder.push_bind(cursor.id);
+            builder.push(")");
+        }
+
+        builder.push(" ORDER BY u.created_at DESC, u.id DESC LIMIT ");
+        builder.push_bind(limit);
+
+        let users = builder.build_query_as::<User>().fetch_all(&pool).await?;
         Ok(users)
     }
 
