@@ -252,3 +252,34 @@ async fn get_request_with_auth_and_multipart(
         .body(Body::from(payload))
         .unwrap()
 }
+
+/// Helper function to create an authenticated request with extra headers
+/// (e.g. `If-Match`, `If-None-Match`) and an optional JSON body.
+#[allow(dead_code)]
+pub async fn request_with_auth_and_headers<T: serde::Serialize>(
+    method: Method,
+    uri: &str,
+    extra_headers: &[(&'static str, String)],
+    payload: Option<&T>,
+) -> Response<Body> {
+    let token = get_authentication_token().await;
+
+    let mut builder = Request::builder()
+        .method(method)
+        .uri(uri.to_string())
+        .header(CONTENT_TYPE, "application/json")
+        .header(AUTHORIZATION, token)
+        .header(ACCEPT, "application/json");
+
+    for (name, value) in extra_headers {
+        builder = builder.header(*name, value);
+    }
+
+    let body = match payload {
+        Some(payload) => Body::from(serde_json::to_string(payload).expect("serialize payload")),
+        None => Body::empty(),
+    };
+
+    let app = create_test_router().await;
+    app.oneshot(builder.body(body).unwrap()).await.unwrap()
+}

@@ -2,7 +2,10 @@
 //! It abstracts operations such as user creation, retrieval, update, and deletion.
 
 use crate::{
-    common::error::AppError,
+    common::{
+        error::AppError,
+        pagination::{Page, PageQuery},
+    },
     domains::file::dto::file_dto::UploadFileDto,
     domains::user::dto::user_dto::{CreateUserMultipartDto, SearchUserDto, UpdateUserDto, UserDto},
 };
@@ -31,8 +34,8 @@ pub trait UserServiceTrait: Send + Sync {
     async fn get_user_list(&self, search_user_dto: SearchUserDto)
     -> Result<Vec<UserDto>, AppError>;
 
-    /// Retrieves all users.
-    async fn get_users(&self) -> Result<Vec<UserDto>, AppError>;
+    /// Retrieves one page of users, newest first.
+    async fn get_users(&self, page: PageQuery) -> Result<Page<UserDto>, AppError>;
 
     /// Creates a new user with optional profile picture upload.
     async fn create_user(

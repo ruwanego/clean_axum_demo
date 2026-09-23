@@ -6,7 +6,10 @@ use std::sync::Arc;
 use sqlx::PgPool;
 
 use crate::{
-    common::error::AppError,
+    common::{
+        error::AppError,
+        pagination::{Page, PageQuery},
+    },
     domains::device::dto::device_dto::{
         CreateDeviceDto, DeviceDto, UpdateDeviceDto, UpdateManyDevicesDto,
     },
@@ -26,7 +29,7 @@ pub trait DeviceServiceTrait: Send + Sync {
     async fn get_device_by_id(&self, id: String) -> Result<DeviceDto, AppError>;
 
     /// Retrieves a list of all devices.
-    async fn get_devices(&self) -> Result<Vec<DeviceDto>, AppError>;
+    async fn get_devices(&self, page: PageQuery) -> Result<Page<DeviceDto>, AppError>;
 
     /// Creates a new device from the provided payload.
     async fn create_device(&self, payload: CreateDeviceDto) -> Result<DeviceDto, AppError>;

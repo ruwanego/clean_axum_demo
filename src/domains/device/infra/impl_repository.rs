@@ -3,6 +3,7 @@ use sqlx::QueryBuilder;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
+use crate::common::pagination::Cursor;
 use crate::domains::device::domain::model::Device;
 use crate::domains::device::domain::repository::DeviceRepository;
 use crate::domains::device::dto::device_dto::{
@@ -31,8 +32,13 @@ const FIND_DEVICE_INFO_QUERY: &str = r#"
 
 #[async_trait]
 impl DeviceRepository for DeviceRepo {
-    async fn find_all(&self, pool: PgPool) -> Result<Vec<Device>, sqlx::Error> {
-        let devices = sqlx::query_as::<_, Device>(
+    async fn find_page(
+        &self,
+        pool: PgPool,
+        cursor: Option<Cursor>,
+        limit: i64,
+    ) -> Result<Vec<Device>, sqlx::Error> {
+        let mut builder = QueryBuilder::<_>::new(
             r#"
             select
                 id,
@@ -47,11 +53,24 @@ impl DeviceRepository for DeviceRepo {
                 modified_at
             from
                 devices
+            where 1=1
             "#,
-        )
-        .fetch_all(&pool)
-        .await?;
+        );
 
+        // Keyset predicate: continue strictly after the last row of the previous page,
+        // using the same (created_at, id) ordering as below.
+        if let Some(cursor) = cursor {
+            builder.push(" and (created_at, id) < (");
+            builder.push_bind(cursor.created_at);
+            builder.push(", ");
+            builder.push_bind(cursor.id);
+            builder.push(")");
+        }
+
+        builder.push(" order by created_at desc, id desc limit ");
+        builder.push_bind(limit);
+
+        let devices = builder.build_query_as::<Device>().fetch_all(&pool).await?;
         Ok(devices)
     }
 

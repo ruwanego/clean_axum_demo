@@ -1,5 +1,8 @@
 use crate::{
-    common::error::AppError,
+    common::{
+        error::AppError,
+        pagination::{Cursor, Page, PageQuery},
+    },
     domains::{
         file::{FileServiceTrait, dto::file_dto::UploadFileDto},
         user::{
@@ -73,17 +76,22 @@ impl UserServiceTrait for UserService {
 
     /// Retrieves all users.
     /// Returns a vector of UserDto objects.
-    async fn get_users(&self) -> Result<Vec<UserDto>, AppError> {
-        match self.repo.find_all(self.pool.clone()).await {
-            Ok(users) => {
-                let user_dtos: Vec<UserDto> = users.into_iter().map(Into::into).collect();
-                Ok(user_dtos)
-            }
-            Err(err) => {
+    async fn get_users(&self, page: PageQuery) -> Result<Page<UserDto>, AppError> {
+        let limit = page.limit();
+        // Fetch one extra row to learn whether a further page exists.
+        let users = self
+            .repo
+            .find_page(self.pool.clone(), page.cursor()?, limit as i64 + 1)
+            .await
+            .map_err(|err| {
                 tracing::error!("Error fetching users: {err}");
-                Err(AppError::DatabaseError(err))
-            }
-        }
+                AppError::DatabaseError(err)
+            })?;
+
+        let user_dtos: Vec<UserDto> = users.into_iter().map(Into::into).collect();
+        Page::build(user_dtos, limit, |user| {
+            user.created_at.map(|at| Cursor::new(at, user.id.clone()))
+        })
     }
     /// Creates a new user.
     /// Takes a CreateUserMultipartDto object and an optional UploadFileDto object.

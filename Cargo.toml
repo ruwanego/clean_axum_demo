@@ -45,6 +45,7 @@ object_store = { version = "0.14", features = ["aws"] }
 mime_guess = "2"
 futures-util = "0.3"
 bytes = "1"
+base64 = "0.23"
 
 [features]
 opentelemetry = [

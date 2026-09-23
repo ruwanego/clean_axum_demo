@@ -1,7 +1,12 @@
 use crate::{
     common::{
-        app_state::AppState, dto::RestApiResponse, error::AppError, jwt::Claims,
+        app_state::AppState,
+        dto::RestApiResponse,
+        error::AppError,
+        etag::{check_if_match, entity_tag, is_not_modified},
+        jwt::Claims,
         multipart_helper::parse_multipart_to_maps,
+        pagination::{Page, PageQuery},
     },
     domains::{
         file::dto::file_dto::UploadFileDto,
@@ -11,8 +16,9 @@ use crate::{
 
 use axum::{
     Extension, Json,
-    extract::{Multipart, State},
-    response::IntoResponse,
+    extract::{Multipart, Query, State},
+    http::{HeaderMap, StatusCode, header},
+    response::{IntoResponse, Response},
 };
 
 use validator::Validate;
@@ -26,9 +32,17 @@ use validator::Validate;
 pub async fn get_user_by_id(
     State(state): State<AppState>,
     axum::extract::Path(id): axum::extract::Path<String>,
-) -> Result<impl IntoResponse, AppError> {
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
     let user = state.user_service.get_user_by_id(id).await?;
-    Ok(RestApiResponse::success(user))
+    let etag = entity_tag(&user.id, user.modified_at);
+
+    // The client already has this version.
+    if is_not_modified(&headers, &etag) {
+        return Ok((StatusCode::NOT_MODIFIED, [(header::ETAG, etag)]).into_response());
+    }
+
+    Ok(([(header::ETAG, etag)], RestApiResponse::success(user)).into_response())
 }
 
 #[utoipa::path(
@@ -49,11 +63,15 @@ pub async fn get_user_list(
 #[utoipa::path(
     get,
     path = "/user",
-    responses((status = 200, description = "List all users", body = [UserDto])),
+    params(PageQuery),
+    responses((status = 200, description = "List users (cursor paginated)", body = Page<UserDto>)),
     tag = "Users"
 )]
-pub async fn get_users(State(state): State<AppState>) -> Result<impl IntoResponse, AppError> {
-    let users = state.user_service.get_users().await?;
+pub async fn get_users(
+    State(state): State<AppState>,
+    Query(page): Query<PageQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let users = state.user_service.get_users(page).await?;
     Ok(RestApiResponse::success(users))
 }
 
@@ -135,8 +153,13 @@ pub async fn update_user(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
     axum::extract::Path(id): axum::extract::Path<String>,
+    headers: HeaderMap,
     Json(payload): Json<UpdateUserDto>,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<Response, AppError> {
+    // Optimistic concurrency: reject the write if the caller's copy is stale.
+    let current = state.user_service.get_user_by_id(id.clone()).await?;
+    check_if_match(&headers, &entity_tag(&current.id, current.modified_at))?;
+
     payload.validate().map_err(|err| {
         tracing::error!("Validation error: {err}");
         AppError::ValidationError(format!("Invalid input: {}", err))
@@ -147,7 +170,9 @@ pub async fn update_user(
     payload.modified_by = claims.sub.clone().to_string();
 
     let user = state.user_service.update_user(id, payload).await?;
-    Ok(RestApiResponse::success(user))
+    let etag = entity_tag(&user.id, user.modified_at);
+
+    Ok(([(header::ETAG, etag)], RestApiResponse::success(user)).into_response())
 }
 
 #[utoipa::path(

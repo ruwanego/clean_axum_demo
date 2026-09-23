@@ -3,6 +3,7 @@ use axum::http::{Method, StatusCode};
 use clean_axum_demo::common::{
     dto::RestApiResponse,
     jwt::{AuthBody, AuthPayload},
+    problem::ProblemDetails,
 };
 use test_helpers::{TEST_CLIENT_ID, TEST_CLIENT_SECRET, deserialize_json_body, request_with_body};
 
@@ -44,11 +45,10 @@ async fn test_login_user_fail() {
 
     assert_eq!(parts.status, StatusCode::UNAUTHORIZED);
 
-    let response_body: RestApiResponse<()> = deserialize_json_body(body).await.unwrap();
+    let problem: ProblemDetails = deserialize_json_body(body).await.unwrap();
 
-    assert_eq!(response_body.0.status, StatusCode::UNAUTHORIZED);
-    // println!("response_body.0.status: {:?}", response_body.0.status);
-    // println!("response_body.0.message: {:?}", response_body.0.message);
+    assert_eq!(problem.status, StatusCode::UNAUTHORIZED.as_u16());
+    assert_eq!(problem.type_uri, "/problems/unauthorized");
 }
 
 #[tokio::test]
@@ -66,9 +66,8 @@ async fn test_login_user_not_found() {
 
     assert_eq!(parts.status, StatusCode::NOT_FOUND);
 
-    let response_body: RestApiResponse<()> = deserialize_json_body(body).await.unwrap();
+    let problem: ProblemDetails = deserialize_json_body(body).await.unwrap();
 
-    assert_eq!(response_body.0.status, StatusCode::NOT_FOUND);
-    println!("response_body.0.status: {:?}", response_body.0.status);
-    println!("response_body.0.message: {:?}", response_body.0.message);
+    assert_eq!(problem.status, StatusCode::NOT_FOUND.as_u16());
+    assert_eq!(problem.type_uri, "/problems/not-found");
 }

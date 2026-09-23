@@ -1,5 +1,8 @@
 use crate::{
-    common::error::AppError,
+    common::{
+        error::AppError,
+        pagination::{Cursor, Page, PageQuery},
+    },
     domains::device::{
         domain::{repository::DeviceRepository, service::DeviceServiceTrait},
         dto::device_dto::{CreateDeviceDto, DeviceDto, UpdateDeviceDto, UpdateManyDevicesDto},
@@ -44,17 +47,24 @@ impl DeviceServiceTrait for DeviceService {
     }
 
     /// get devices
-    async fn get_devices(&self) -> Result<Vec<DeviceDto>, AppError> {
-        match self.repo.find_all(self.pool.clone()).await {
-            Ok(devices) => {
-                let device_dtos: Vec<DeviceDto> = devices.into_iter().map(Into::into).collect();
-                Ok(device_dtos)
-            }
-            Err(err) => {
+    async fn get_devices(&self, page: PageQuery) -> Result<Page<DeviceDto>, AppError> {
+        let limit = page.limit();
+        // Fetch one extra row to learn whether a further page exists.
+        let devices = self
+            .repo
+            .find_page(self.pool.clone(), page.cursor()?, limit as i64 + 1)
+            .await
+            .map_err(|err| {
                 tracing::error!("Error fetching devices: {err}");
-                Err(AppError::DatabaseError(err))
-            }
-        }
+                AppError::DatabaseError(err)
+            })?;
+
+        let device_dtos: Vec<DeviceDto> = devices.into_iter().map(Into::into).collect();
+        Page::build(device_dtos, limit, |device| {
+            device
+                .created_at
+                .map(|at| Cursor::new(at, device.id.clone()))
+        })
     }
 
     /// create device

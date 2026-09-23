@@ -1,6 +1,7 @@
 //! This module defines the `UserRepository` trait, which abstracts
 //! the database operations related to user entities.
 
+use crate::common::pagination::Cursor;
 use crate::domains::user::dto::user_dto::{CreateUserMultipartDto, SearchUserDto, UpdateUserDto};
 
 use super::model::User;
@@ -12,8 +13,14 @@ use sqlx::{PgPool, Postgres, Transaction};
 /// Trait representing repository-level operations for user entities.
 /// Provides methods for creating, retrieving, updating, and deleting users in the database.
 pub trait UserRepository: Send + Sync {
-    /// Retrieves all users from the database.
-    async fn find_all(&self, pool: PgPool) -> Result<Vec<User>, sqlx::Error>;
+    /// Retrieves one keyset page of users, newest first.
+    /// Returns up to `limit` rows starting strictly after `cursor`.
+    async fn find_page(
+        &self,
+        pool: PgPool,
+        cursor: Option<Cursor>,
+        limit: i64,
+    ) -> Result<Vec<User>, sqlx::Error>;
 
     /// Finds a user by their unique identifier.
     async fn find_by_id(&self, pool: PgPool, id: String) -> Result<Option<User>, sqlx::Error>;
